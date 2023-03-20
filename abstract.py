@@ -8,6 +8,7 @@ Created on Fri Mar 17 07:10:20 2023
 
 import pandas as pd
 import numpy as np
+import time
 from kaggle.api.kaggle_api_extended import KaggleApi
 from mlutil.util import mlflow
 from mlutil.features import ABSFeatureGenerator
@@ -71,24 +72,9 @@ class ABSDataSplitter:
         
         Yields
         -------
-        pd.DataFrame
+        train: pd.DataFrame, valid: pd.DataFrame
         '''
         raise NotImplementedError()
-        
-
-
-class ABSModel:
-    def __init__(self, cv_method: str, cv_folds: int, **kwargs):
-        # TODO: mlbaseのリファクタ
-        '''
-        1. kwargsをなんとかする
-        2. cvを何とかする
-            ・cvの引数にgenerator(yield train, valid)を持てるようにし、model内にCV分割関数を持たないようにする。
-            ・cv内でモデルの保存を行い、各モデルのvalid予測結果をreturnできるようにする。
-        '''        
-        self.cv_method = cv_method
-        self.cv_folds = cv_folds
-        self.cv_predictions = []
 
 
 
@@ -141,20 +127,28 @@ class ABSSubmitter:
         self.pred_postprocessor = pred_postprocessor
         self.api = self._init_kaggle_api()
     
-    def _get_submit_data(self, test: pd.DataFrame) -> pd.DataFrame:
-        # TODO: mlbaseをリファクタしcv averagingを実装
+    def get_submit_data(self, test: pd.DataFrame, cv_averaging: bool=True) -> pd.DataFrame:
+        raise NotImplementedError()
+        
+    def validate_submit_data(self, sub):
         raise NotImplementedError()
     
-    def make_submission(self, dry_run: bool=False):
+    def make_submission(self, dry_run: bool=False, return_only: bool=False):
         data = self._process_data(dry_run=dry_run)
         train, test = self.data_splitter.train_test_split(data)
         metrics = self._train_and_evaluate(train)
-        sub = self._get_submit_data(test)
+        sub = self.get_submit_data(test)
+        self.validate_submit_data()
         if self.pred_postprocessor:
             sub = self.pred_postprocessor(sub)
+        
         if not dry_run:
-            self._submit(sub)
-            self._save_experiment(metrics)
+            if return_only:
+                return sub, metrics
+            else:
+                self._submit(sub)
+                time.sleep(15)
+                self._save_experiment(metrics)
         else:
             breakpoint()
             
@@ -171,9 +165,9 @@ class ABSSubmitter:
                             retrain_all_data: bool=False,
                             save_model: bool=True) -> list:
         cv_generator = self.data_splitter.cv_split(train)
-        # TODO: cv_predictionを返り値として受け取る
         res = self.model.cv(train, cv_generator=cv_generator)
         if retrain_all_data:
+            del self.model.models
             self.model.fit(train, save_model=save_model)
         return res.metrics
     
@@ -216,8 +210,70 @@ class ABSSubmitter:
         
     def _calc_sharpe(self, mean, std):
         return mean / (std + 1)
+
+
+
+class EnsembleSubmitter(ABSSubmitter):
+    def __init__(self, *submitters):
+        self.submitters = submitters
+        self.submission_comment = submitters[0].submission_comment
+        self.api = self._init_kaggle_api()
+        self.pred_col = submitters[0].model.pred_col
+        
+        if not self.pred_col:
+            raise ValueError('pred_col must be specified.')
     
+    def calc_ensembled_metrics(self, ensembled_preds):
+        raise NotImplementedError()
+        
+    def make_submission(self, dry_run=False):
+        sub, metrics = self._ensemble(dry_run=dry_run)
+        self._validate_submit_data(sub)
+        if not dry_run:
+            self._submit(sub)
+            time.sleep(15)
+            params = {'model': 'Ensemble', 
+                      'model_num': len(self.submitters), 
+                      **self._get_model_names()}
+            self._save_experiment(metrics, params=params)
+        else:
+            breakpoint()
+        
+    def _ensemble(self, dry_run):
+        result = [i.make_submission(dry_run=dry_run, return_only=True) for i in self.submitters]
+        each_sub = [i[0] for i in result]
+        sub = each_sub[0].copy()
+        sub[self.pred_col] = self._ensemble_predictions(each_sub)
+        
+        each_cv = [i.model.cv_predictions for i in self.submitters]
+        each_cv = list(np.array(each_cv, dtype=object).T)
+        each_cv = list(map(self._shape_cv_predictions, each_cv))
+        apply = lambda each_df: self._ensemble_predictions(each_df)
+        cv_preds = list(map(apply, each_cv))
+        ensembled_cv = []
+        for i in range(len(each_cv)):
+            df = each_cv[i][0].copy()
+            df[self.pred_col] = cv_preds[i]
+            ensembled_cv.append(df)
+        
+        metrics = self._calc_metrics(ensembled_cv)
+        return sub, metrics
     
+    def _ensemble_predictions(self, each_df):
+        preds = [i[self.pred_col].values for i in each_df]
+        preds = np.stack(preds).mean(axis=0)
+        return preds
+    
+    def _shape_cv_predictions(self, each_df):
+        '''
+        各モデルで必要ラグが違ったりして行数が違う場合があるので、必要に応じて最小のものに合わせる。
+        '''    
+        return each_df
+    
+    def _get_model_names(self):
+        name = lambda s: s.model.__class__.__name__
+        return {f'model_{i}': name(self.submitters[i]) for i in range(len(self.submitters))}    
+
 
 
 
