@@ -9,6 +9,7 @@ Created on Fri Mar 17 07:10:20 2023
 import pandas as pd
 import numpy as np
 import time
+import joblib
 from kaggle.api.kaggle_api_extended import KaggleApi
 from mlutil.util import mlflow
 from mlutil.features import ABSFeatureGenerator
@@ -16,30 +17,41 @@ from mlutil.mlbase import MLBase
 
 
 
-class ABSDataFetcher:
+class ABSCallable:
     data_dir = './data/'
     
     def __init__(self):
-        pass
-    
-    def __call__(self, dry_run: bool=False) -> pd.DataFrame:
-        return self._load_data(dry_run=dry_run)
-    
-    def _load_data(self, dry_run: bool):
-        raise NotImplementedError()
-
-
-
-class ABSDataPreprocessor:
-    def __init__(self):
-        pass
+        self.main = self._cache(self.main)
     
     def __call__(self, df: pd.DataFrame) -> pd.DataFrame:
+        return self.main(df)
+        
+    def main(self, df: pd.DataFrame) -> pd.DataFrame:
         raise NotImplementedError()
+        
+    def _cache(self, func):
+        # Note: not working when use decorator
+        return joblib.Memory(self.data_dir).cache(func, verbose=5)
+
+
+
+class ABSDataFetcher(ABSCallable):
+    def __call__(self, dry_run: bool=False) -> pd.DataFrame:
+        return self.main(dry_run=dry_run)
+    
+    def main(self, dry_run: bool):
+        raise NotImplementedError()
+
+
+
+class ABSDataPreprocessor(ABSCallable):
+    pass
 
 
 
 def init_preprocessor(*args):
+    cache = lambda f: joblib.Memory('./data/').cache(f, verbose=0)
+    @cache
     def _apply(df):
         for processor in args:
             df = processor(df)
@@ -48,12 +60,8 @@ def init_preprocessor(*args):
     
 
 
-class ABSDataPostprocessor:
-    def __init__(self):
-        pass
-    
-    def __call__(self, df: pd.DataFrame) -> pd.DataFrame:
-        raise NotImplementedError()
+class ABSDataPostprocessor(ABSCallable):
+    pass
 
 
 
@@ -61,10 +69,10 @@ class ABSDataSplitter:
     def __init__(self):
         pass
     
-    def train_test_split(self, df: pd.DataFrame) -> pd.DataFrame:
+    def train_test_split(self, df: pd.DataFrame) -> tuple:
         raise NotImplementedError()
         
-    def cv_split(self, df: pd.DataFrame) -> pd.DataFrame:
+    def cv_split(self, df: pd.DataFrame) -> tuple:
         '''
         Parameters
         ----------
@@ -78,12 +86,8 @@ class ABSDataSplitter:
 
 
 
-class ABSPredPostProcessor:
-    def __init__(self):
-        pass
-    
-    def __call__(self, df: pd.DataFrame) -> pd.DataFrame:
-        raise NotImplementedError()
+class ABSPredPostProcessor(ABSCallable):
+    pass
 
 
 
@@ -164,8 +168,11 @@ class ABSSubmitter:
                             train: pd.DataFrame, 
                             retrain_all_data: bool=False,
                             save_model: bool=True) -> list:
-        cv_generator = self.data_splitter.cv_split(train)
-        res = self.model.cv(train, cv_generator=cv_generator)
+        fold_generator = self.data_splitter.cv_split(train)
+        # TODO: ここから。
+        # ABSModelを空のmodel_pathで定義しておきassertion.
+        # cv, fit内で保存済みモデルをtryで読み込み、読み込んだ時はwarningを出す。
+        res = self.model.cv(fold_generator)
         if retrain_all_data:
             del self.model.models
             self.model.fit(train, save_model=save_model)
