@@ -137,10 +137,16 @@ class ABSSubmitter:
     def validate_submit_data(self, sub):
         raise NotImplementedError()
     
-    def make_submission(self, dry_run: bool=False, return_only: bool=False):
+    def make_submission(self, 
+                        retrain_all_data: bool=False,
+                        save_model: bool=True,
+                        dry_run: bool=False, 
+                        return_only: bool=False):
         data = self._process_data(dry_run=dry_run)
         train, test = self.data_splitter.train_test_split(data)
-        metrics = self._train_and_evaluate(train)
+        metrics = self._train_and_evaluate(train,
+                                           retrain_all_data=retrain_all_data,
+                                           save_model=save_model)
         sub = self.get_submit_data(test)
         self.validate_submit_data()
         if self.pred_postprocessor:
@@ -169,10 +175,8 @@ class ABSSubmitter:
                             retrain_all_data: bool=False,
                             save_model: bool=True) -> list:
         fold_generator = self.data_splitter.cv_split(train)
-        # TODO: ここから。
-        # ABSModelを空のmodel_pathで定義しておきassertion.
-        # cv, fit内で保存済みモデルをtryで読み込み、読み込んだ時はwarningを出す。
-        res = self.model.cv(fold_generator)
+        save_models = save_model and not retrain_all_data
+        res = self.model.cv(fold_generator, save_models=save_models)
         if retrain_all_data:
             del self.model.models
             self.model.fit(train, save_model=save_model)
