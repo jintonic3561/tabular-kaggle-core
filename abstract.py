@@ -86,24 +86,19 @@ class ABSDataSplitter:
 
 
 
-class ABSPredPostProcessor(ABSCallable):
-    pass
-
-
-
 class ABSSubmitter:
     data_dir = './data/'
     competition_name = ''
+    experiment_name = ''
     
     def __init__(self, 
                  data_fetcher: ABSDataFetcher,
                  data_preprocessor: ABSDataPreprocessor,
                  feature_generator: ABSFeatureGenerator,
                  data_splitter: ABSDataSplitter,
+                 data_postprocessor: ABSDataPostprocessor,
                  model: MLBase,
-                 submission_comment: str,
-                 data_postprocessor: ABSDataPostprocessor=None,
-                 pred_postprocessor: ABSPredPostProcessor=None):
+                 submission_comment: str):
         '''
         Parameters
         ----------
@@ -111,30 +106,33 @@ class ABSSubmitter:
         data_preprocessor: ABSDataPreprocessor
         feature_generator: ABSFeatureGenerator
         data_splitter: ABSDataSplitter
+        data_postprocessor: ABSDataPostprocessor
         model: ABSModel, MLBase
         submission_comment: str
             The Message for submission.
-        pred_postprocessor: ABSPredPostProcessor, optional
-        data_postprocessor: ABSDataPostprocessor, optional
         '''
         
         if not self.competition_name :
             raise ValueError('competition_name must be specified.')
+        if not self.experiment_name:
+            raise ValueError('experiment_name must be specified.')
         
         self.data_fetcher = data_fetcher
         self.data_preprocessor = data_preprocessor
         self.feature_generator = feature_generator
         self.data_splitter = data_splitter
+        self.data_postprocessor = data_postprocessor
         self.model = model
         self.submission_comment = submission_comment
-        self.data_postprocessor = data_postprocessor
-        self.pred_postprocessor = pred_postprocessor
         self.api = self._init_kaggle_api()
     
     def get_submit_data(self, test: pd.DataFrame, cv_averaging: bool=True) -> pd.DataFrame:
         raise NotImplementedError()
         
     def validate_submit_data(self, sub):
+        raise NotImplementedError()
+        
+    def get_experiment_params(self):
         raise NotImplementedError()
     
     def make_submission(self, 
@@ -144,21 +142,20 @@ class ABSSubmitter:
                         return_only: bool=False):
         data = self._process_data(dry_run=dry_run)
         train, test = self.data_splitter.train_test_split(data)
-        metrics = self._train_and_evaluate(train,
-                                           retrain_all_data=retrain_all_data,
-                                           save_model=save_model)
+        res = self._train_and_evaluate(train,
+                                       retrain_all_data=retrain_all_data,
+                                       save_model=save_model)
         sub = self.get_submit_data(test)
         self.validate_submit_data()
-        if self.pred_postprocessor:
-            sub = self.pred_postprocessor(sub)
         
         if not dry_run:
             if return_only:
-                return sub, metrics
+                return sub, res
             else:
                 self._submit(sub)
                 time.sleep(15)
-                self._save_experiment(metrics)
+                params = self.get_experiment_params()
+                self._save_experiment(res.metrics, params=params)
         else:
             breakpoint()
             
@@ -166,8 +163,7 @@ class ABSSubmitter:
         data = self.data_fetcher(dry_run=dry_run)
         data = self.data_preprocessor(data)
         data = self.feature_generator(data)
-        if self.data_postprocessor:
-            data = self.data_postprocessor(data)
+        data = self.data_postprocessor(data)
         return data
     
     def _train_and_evaluate(self, 
@@ -180,7 +176,7 @@ class ABSSubmitter:
         if retrain_all_data:
             del self.model.models
             self.model.fit(train, save_model=save_model)
-        return res.metrics
+        return res
     
     def _submit(self, test: pd.DataFrame):
         file_name = f'{self.data_dir}submission.csv'
@@ -207,15 +203,14 @@ class ABSSubmitter:
         std = np.array(cv_metrics).std()
         sharpe = self._calc_sharpe(mean, std)
         public_score = self._get_public_score()
-        experiment_name = self.competition_name.split('-')[0]
-        mlflow.run(experiment_name=experiment_name,
+        mlflow.run(experiment_name=self.experiment_name,
                    run_name=self.submission_comment,
                    params=params,
                    metrics={'cv_mean': mean,
                             'cv_std': std,
                             'cv_sharpe': sharpe,
                             'public_score': public_score},
-                   artifact_paths=[self.model.model_path])
+                   artifact_paths=[self.model.model_dir])
         print(f'CV metrics: {[round(i, 4) for i in cv_metrics]}')
         print(f'mean: {round(mean, 4)}, std: {round(std, 4)}, sharpe: {round(sharpe, 4)}')
         
@@ -223,7 +218,7 @@ class ABSSubmitter:
         return mean / (std + 1)
 
 
-
+# TODO: cvの返り値でcv_predictionsを扱うことにしたので、多分リファクタ必要
 class EnsembleSubmitter(ABSSubmitter):
     def __init__(self, *submitters):
         self.submitters = submitters
