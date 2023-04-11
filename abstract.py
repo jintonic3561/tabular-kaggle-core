@@ -34,14 +34,18 @@ class ABSCallable:
         
     def _cache(self, func):
         # Note: not working when use decorator
-        return joblib.Memory(self.data_dir).cache(func, verbose=5)
+        dir_ = f'{self.data_dir}joblib/{self.__class__.__name__}/'
+        return joblib.Memory(dir_).cache(func, verbose=5)
 
 
 
 class ABSDataFetcher(ABSCallable):
-    def __call__(self, dry_run: bool=False) -> pd.DataFrame:
-        return self.main(dry_run=dry_run)
-    
+    def __call__(self, dry_run: bool=False, cache=True) -> pd.DataFrame:
+        if cache:
+            return self._cache(self.main)(dry_run)
+        else:
+            return self.main(dry_run)
+        
     def main(self, dry_run: bool):
         raise NotImplementedError()
 
@@ -187,9 +191,12 @@ class ABSSubmitter:
                                     competition=self.competition_name)
     
     def _init_kaggle_api(self) -> KaggleApi:
-        api = KaggleApi()
-        api.authenticate()
-        return api
+        try:
+            api = KaggleApi()
+            api.authenticate()
+            return api
+        except OSError:
+            return None
     
     def _get_public_score(self) -> float:
         sub = self.api.competitions_submissions_list(self.competition_name)
