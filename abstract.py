@@ -21,10 +21,13 @@ class ABSCallable:
     data_dir = './data/'
     
     def __init__(self):
-        self.main = self._cache(self.main)
+        pass
     
-    def __call__(self, df: pd.DataFrame) -> pd.DataFrame:
-        return self.main(df)
+    def __call__(self, df: pd.DataFrame, cache=True) -> pd.DataFrame:
+        if cache:
+            return self._cache(self.main)(df)
+        else:
+            return self.main(df)
         
     def main(self, df: pd.DataFrame) -> pd.DataFrame:
         raise NotImplementedError()
@@ -66,8 +69,8 @@ class ABSDataPostprocessor(ABSCallable):
 
 
 class ABSDataSplitter:
-    def __init__(self):
-        pass
+    def __init__(self, n_splits=5):
+        self.n_splits = n_splits
     
     def train_test_split(self, df: pd.DataFrame) -> tuple:
         raise NotImplementedError()
@@ -171,10 +174,8 @@ class ABSSubmitter:
                             retrain_all_data: bool=False,
                             save_model: bool=True) -> list:
         fold_generator = self.data_splitter.cv_split(train)
-        save_models = save_model and not retrain_all_data
-        res = self.model.cv(fold_generator, save_models=save_models)
+        res = self.model.cv(fold_generator, save_model=save_model and not retrain_all_data)
         if retrain_all_data:
-            del self.model.models
             self.model.fit(train, save_model=save_model)
         return res
     
