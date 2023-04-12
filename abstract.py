@@ -10,7 +10,6 @@ import pandas as pd
 import numpy as np
 import time
 import joblib
-from kaggle.api.kaggle_api_extended import KaggleApi
 from mlutil.util import mlflow
 from mlutil.features import ABSFeatureGenerator
 from mlutil.mlbase import MLBase
@@ -190,8 +189,10 @@ class ABSSubmitter:
                                     message=self.submission_comment,
                                     competition=self.competition_name)
     
-    def _init_kaggle_api(self) -> KaggleApi:
+    def _init_kaggle_api(self) -> any:
+        # kaggle notebook上で失敗するため
         try:
+            from kaggle.api.kaggle_api_extended import KaggleApi
             api = KaggleApi()
             api.authenticate()
             return api
