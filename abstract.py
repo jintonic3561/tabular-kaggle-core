@@ -22,7 +22,7 @@ class ABSCallable:
     def __init__(self):
         pass
     
-    def __call__(self, df: pd.DataFrame, cache=True) -> pd.DataFrame:
+    def __call__(self, df: pd.DataFrame, cache=False) -> pd.DataFrame:
         if cache:
             return self._cache(self.main)(df)
         else:
@@ -39,7 +39,7 @@ class ABSCallable:
 
 
 class ABSDataFetcher(ABSCallable):
-    def __call__(self, dry_run: bool=False, cache=True) -> pd.DataFrame:
+    def __call__(self, dry_run: bool=False, cache=False) -> pd.DataFrame:
         if cache:
             return self._cache(self.main)(dry_run)
         else:
@@ -55,14 +55,17 @@ class ABSDataPreprocessor(ABSCallable):
 
 
 
-def init_preprocessor(*args):
-    cache = lambda f: joblib.Memory('./data/').cache(f, verbose=0)
-    @cache
+def init_preprocessor(*args, cache=False):
     def _apply(df):
         for processor in args:
             df = processor(df)
         return df
-    return _apply
+    
+    if cache:
+        memory = lambda f: joblib.Memory('./data/').cache(f, verbose=0)
+        return memory(_apply)
+    else:
+        return _apply
     
 
 
@@ -225,6 +228,12 @@ class ABSSubmitter:
         
     def _calc_sharpe(self, mean, std):
         return mean / (std + 1)
+    
+    def _cache(self, func):
+        # Note: not working when use decorator
+        dir_ = f'{self.data_dir}joblib/{self.__class__.__name__}/'
+        return joblib.Memory(dir_).cache(func, verbose=5)
+    
 
 
 # TODO: cvの返り値でcv_predictionsを扱うことにしたので、多分リファクタ必要
