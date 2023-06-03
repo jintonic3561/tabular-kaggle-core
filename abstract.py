@@ -10,11 +10,13 @@ import pandas as pd
 import numpy as np
 import time
 import joblib
+import json
+import pickle
+import os
 from mlutil.util import mlflow
+from mlutil.util.notifier import slack_notify, SlackChannel
 from mlutil.features import ABSFeatureGenerator
 from mlutil.mlbase import MLBase
-
-
 
 class ABSCallable:
     data_dir = './data/'
@@ -70,7 +72,32 @@ def init_preprocessor(*args, cache=False):
 
 
 class ABSDataPostprocessor(ABSCallable):
-    pass
+    def __init__(self, save_dir):
+        self.save_dir = save_dir
+        self._init_dir()
+        
+    def main(self, df: pd.DataFrame) -> pd.DataFrame:
+        raise NotImplementedError()
+    
+    def save(self, processor):
+        path = os.path.join(self.save_dir, self._get_file_name())
+        with open(path, 'wb') as f:
+            pickle.dump(processor, f)
+    
+    def load(self, path):
+        with open(path, mode='rb') as f:
+            return pickle.load(f)
+    
+    def _init_dir(self):
+        try:
+            if not os.path.exists(self.save_dir):
+                os.makedirs(self.save_dir)
+        # Note: kaggle notebook用
+        except OSError:
+            pass
+    
+    def _get_file_name(self):
+        return self.__class__.__name__.lower() + '.pickle'
 
 
 
@@ -215,16 +242,20 @@ class ABSSubmitter:
         std = np.array(cv_metrics).std()
         sharpe = self._calc_sharpe(mean, std)
         public_score = self._get_public_score()
+        metrics = {'cv_mean': mean,
+                   'cv_std': std,
+                   'cv_sharpe': sharpe,
+                   'public_score': public_score}
         mlflow.run(experiment_name=self.experiment_name,
                    run_name=self.submission_comment,
                    params=params,
-                   metrics={'cv_mean': mean,
-                            'cv_std': std,
-                            'cv_sharpe': sharpe,
-                            'public_score': public_score},
+                   metrics=metrics,
                    artifact_paths=[self.model.model_dir])
+        message = f'experiment finished. metrics:\n{json.dumps(metrics)}'
+        slack_notify(message, channel=SlackChannel.regular)
         print(f'CV metrics: {[round(i, 4) for i in cv_metrics]}')
         print(f'mean: {round(mean, 4)}, std: {round(std, 4)}, sharpe: {round(sharpe, 4)}')
+        
         
     def _calc_sharpe(self, mean, std):
         return mean / (std + 1)
