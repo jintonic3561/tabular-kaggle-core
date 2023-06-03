@@ -72,9 +72,10 @@ def init_preprocessor(*args, cache=False):
 
 
 class ABSDataPostprocessor(ABSCallable):
-    def __init__(self, save_dir):
+    def __init__(self, save_dir=None):
         self.save_dir = save_dir
-        self._init_dir()
+        if save_dir:
+            self._init_dir()
         
     def main(self, df: pd.DataFrame) -> pd.DataFrame:
         raise NotImplementedError()
