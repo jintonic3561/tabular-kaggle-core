@@ -135,16 +135,14 @@ class ABSSubmitter:
         self.submission_comment = submission_comment
         self.api = self._init_kaggle_api()
     
-    def get_submit_data(self, test: pd.DataFrame, cv_averaging: bool=True) -> pd.DataFrame:
-        raise NotImplementedError()
+    def get_submit_data(self, test: pd.DataFrame) -> pd.DataFrame:
+        return self.model.estimate(test)
         
     def validate_submit_data(self, sub):
         raise NotImplementedError()
-        
-    def get_experiment_params(self):
-        raise NotImplementedError()
     
     def make_submission(self, 
+                        experiment_params: dict=None,
                         retrain_all_data: bool=False,
                         save_model: bool=True,
                         dry_run: bool=False, 
@@ -163,8 +161,7 @@ class ABSSubmitter:
             else:
                 self._submit(sub)
                 time.sleep(15)
-                params = self.get_experiment_params()
-                self._save_experiment(res.metrics, params=params)
+                self._save_experiment(res.metrics, params=experiment_params)
         else:
             breakpoint()
             
