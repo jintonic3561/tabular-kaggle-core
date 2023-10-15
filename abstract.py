@@ -202,7 +202,11 @@ class ABSSubmitter:
         self.api = self._init_kaggle_api()
     
     def get_submit_data(self, test: pd.DataFrame) -> pd.DataFrame:
-        return self.model.estimate(test)
+        sub = self.model.estimate(test)
+        if self.model.target_col in sub:
+            sub = sub.drop(columns=self.model.target_col)
+        sub = sub.rename(columns={'pred': self.model.target_col})
+        return sub
         
     def validate_submit_data(self, sub):
         raise NotImplementedError()
@@ -222,7 +226,7 @@ class ABSSubmitter:
                                        retrain_all_data=retrain_all_data,
                                        save_model=save_model)
         sub = self.get_submit_data(test)
-        self.validate_submit_data()
+        self.validate_submit_data(sub)
         
         if not dry_run:
             if return_only:
@@ -245,6 +249,7 @@ class ABSSubmitter:
                             train: pd.DataFrame, 
                             retrain_all_data: bool=False,
                             save_model: bool=True) -> list:
+        self.model.categorical_columns = self.feature_generator.cat_cols
         fold_generator = self.data_splitter.cv_split(train)
         res = self.model.cv(fold_generator, save_model=save_model and not retrain_all_data)
         if retrain_all_data:
@@ -292,6 +297,7 @@ class ABSSubmitter:
                    artifact_paths=[self.model.model_dir])
         message = f'experiment finished. metrics:\n{json.dumps(metrics)}'
         slack_notify(message, channel=SlackChannel.regular)
+        print(f'Public score: {public_score}')
         print(f'CV metrics: {[round(i, 4) for i in cv_metrics]}')
         print(f'mean: {round(mean, 4)}, std: {round(std, 4)}, sharpe: {round(sharpe, 4)}')
         
