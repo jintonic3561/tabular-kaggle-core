@@ -208,19 +208,21 @@ class ABSSubmitter:
         self.submission_comment = submission_comment
         self.api = self._init_kaggle_api()
     
-    def get_submit_data(self, test: pd.DataFrame, cv_averaging: bool=True) -> pd.DataFrame:
-        raise NotImplementedError()
+    def get_submit_data(self, test: pd.DataFrame) -> pd.DataFrame:
+        sub = self.model.estimate(test)
+        if self.model.target_col in sub:
+            sub = sub.drop(columns=self.model.target_col)
+        sub = sub.rename(columns={'pred': self.model.target_col})
+        return sub
         
     def validate_submit_data(self, sub):
         raise NotImplementedError()
-        
-    def get_experiment_params(self):
-        raise NotImplementedError()
-        
-    def get_metric(self, res):        
-        return res.oof_metric
+    
+    def get_metrics(self, res):        
+        return res.metrics
     
     def make_submission(self, 
+                        experiment_params: dict=None,
                         retrain_all_data: bool=False,
                         save_model: bool=True,
                         dry_run: bool=False, 
@@ -239,8 +241,7 @@ class ABSSubmitter:
             else:
                 self._submit(sub)
                 time.sleep(15)
-                params = self.get_experiment_params()
-                self._save_experiment(res, params=params)
+                self._save_experiment(self.get_metrics(res), params=experiment_params)
         else:
             breakpoint()
             
@@ -255,6 +256,7 @@ class ABSSubmitter:
                             train: pd.DataFrame, 
                             retrain_all_data: bool=False,
                             save_model: bool=True) -> list:
+        self.model.categorical_columns = self.feature_generator.cat_cols
         fold_generator = self.data_splitter.cv_split(train)
         res = self.model.cv(fold_generator, save_model=save_model and not retrain_all_data)
         if retrain_all_data:
@@ -304,6 +306,7 @@ class ABSSubmitter:
                    artifact_paths=[self.model.model_dir])
         message = f'experiment finished. metrics:\n{json.dumps(metrics)}'
         slack_notify(message, channel=SlackChannel.regular)
+        print(f'Public score: {public_score}')        
         print(f'metric: {round(metric, 4)}')
         print(f'CV metrics: {[round(i, 4) for i in res.cv_metrics]}')
         print(f'mean: {round(cv_mean, 4)}, std: {round(cv_std, 4)}, sharpe: {round(cv_sharpe, 4)}')
