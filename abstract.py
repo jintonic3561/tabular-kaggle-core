@@ -149,6 +149,13 @@ class ABSDataSplitter:
         train: pd.DataFrame, valid: pd.DataFrame
         '''
         raise NotImplementedError()
+    
+    def k_fold(self, df: pd.DataFrame) -> tuple:
+        k_fold = KFold(n_splits=self.n_splits, shuffle=True, random_state=SEED)
+        for train_index, valid_index in k_fold.split(df):
+            train = df.iloc[train_index]
+            valid = df.iloc[valid_index]
+            yield train, valid
         
     def group_k_fold(self, df: pd.DataFrame, group_col: str) -> tuple:
         # Note: sklearn.GroupKFoldeはshuffleとrandom_stateを指定できないため自炊
@@ -210,8 +217,8 @@ class ABSSubmitter:
     def get_experiment_params(self):
         raise NotImplementedError()
         
-    def get_metrics(self, res):        
-        return res.metrics
+    def get_metric(self, res):        
+        return res.oof_metric
     
     def make_submission(self, 
                         retrain_all_data: bool=False,
@@ -224,7 +231,7 @@ class ABSSubmitter:
                                        retrain_all_data=retrain_all_data,
                                        save_model=save_model)
         sub = self.get_submit_data(test)
-        self.validate_submit_data()
+        self.validate_submit_data(sub)
         
         if not dry_run:
             if return_only:
@@ -233,7 +240,7 @@ class ABSSubmitter:
                 self._submit(sub)
                 time.sleep(15)
                 params = self.get_experiment_params()
-                self._save_experiment(self.get_metrics(res), params=params)
+                self._save_experiment(res, params=params)
         else:
             breakpoint()
             
@@ -279,14 +286,16 @@ class ABSSubmitter:
         score = float(score) if score else np.nan
         return score
     
-    def _save_experiment(self, cv_metrics: list, params: dict):
-        mean = np.array(cv_metrics).mean()
-        std = np.array(cv_metrics).std()
-        sharpe = self._calc_sharpe(mean, std)
+    def _save_experiment(self, res: namedtuple, params: dict):
+        cv_mean = np.array(res.cv_metrics).mean()
+        cv_std = np.array(res.cv_metrics).std()
+        cv_sharpe = self._calc_sharpe(cv_mean, cv_std)
+        metric = self.get_metric(res)
         public_score = self._get_public_score()
-        metrics = {'cv_mean': mean,
-                   'cv_std': std,
-                   'cv_sharpe': sharpe,
+        metrics = {'metric': metric,
+                   'cv_mean': cv_mean,
+                   'cv_std': cv_std,
+                   'cv_sharpe': cv_sharpe,
                    'public_score': public_score}
         mlflow.run(experiment_name=self.experiment_name,
                    run_name=self.submission_comment,
@@ -295,9 +304,9 @@ class ABSSubmitter:
                    artifact_paths=[self.model.model_dir])
         message = f'experiment finished. metrics:\n{json.dumps(metrics)}'
         slack_notify(message, channel=SlackChannel.regular)
-        print(f'CV metrics: {[round(i, 4) for i in cv_metrics]}')
-        print(f'mean: {round(mean, 4)}, std: {round(std, 4)}, sharpe: {round(sharpe, 4)}')
-        
+        print(f'metric: {round(metric, 4)}')
+        print(f'CV metrics: {[round(i, 4) for i in res.cv_metrics]}')
+        print(f'mean: {round(cv_mean, 4)}, std: {round(cv_std, 4)}, sharpe: {round(cv_sharpe, 4)}')
         
     def _calc_sharpe(self, mean, std):
         return mean / (std + 1)
