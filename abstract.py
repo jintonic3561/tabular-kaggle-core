@@ -17,6 +17,7 @@ import json
 import pickle
 import os
 from collections import namedtuple
+from typing import Union
 from sklearn.model_selection import KFold
 from kaggle.api.kaggle_api_extended import KaggleApi
 from mlutil.util import mlflow
@@ -218,8 +219,11 @@ class ABSSubmitter:
     def validate_submit_data(self, sub):
         raise NotImplementedError()
     
-    def get_metrics(self, res):        
-        return res.metrics
+    def get_metrics(self, res):
+        '''
+        分類の場合はoof_metricも利用可
+        '''
+        return res.cv_metrics
     
     def make_submission(self, 
                         experiment_params: dict=None,
@@ -244,6 +248,7 @@ class ABSSubmitter:
                 self._save_experiment(self.get_metrics(res), params=experiment_params)
         else:
             breakpoint()
+            
             
     def _process_data(self, dry_run: bool):
         data = self.data_fetcher(dry_run=dry_run)
@@ -288,17 +293,18 @@ class ABSSubmitter:
         score = float(score) if score else np.nan
         return score
     
-    def _save_experiment(self, res: namedtuple, params: dict):
-        cv_mean = np.array(res.cv_metrics).mean()
-        cv_std = np.array(res.cv_metrics).std()
-        cv_sharpe = self._calc_sharpe(cv_mean, cv_std)
-        metric = self.get_metric(res)
+    def _save_experiment(self, res: Union[list, float], params: dict):
         public_score = self._get_public_score()
-        metrics = {'metric': metric,
-                   'cv_mean': cv_mean,
-                   'cv_std': cv_std,
-                   'cv_sharpe': cv_sharpe,
-                   'public_score': public_score}
+        metrics = {'public_score': public_score}
+        if res is float:
+            metrics['metric'] = res
+        else:
+            cv_mean = np.array(res).mean()
+            cv_std = np.array(res).std()
+            cv_sharpe = self._calc_sharpe(cv_mean, cv_std)
+            metrics['cv_mean'] = cv_mean
+            metrics['cv_std'] = cv_std
+            metrics['cv_sharpe'] = cv_sharpe
         mlflow.run(experiment_name=self.experiment_name,
                    run_name=self.submission_comment,
                    params=params,
@@ -306,10 +312,12 @@ class ABSSubmitter:
                    artifact_paths=[self.model.model_dir])
         message = f'experiment finished. metrics:\n{json.dumps(metrics)}'
         slack_notify(message, channel=SlackChannel.regular)
-        print(f'Public score: {public_score}')        
-        print(f'metric: {round(metric, 4)}')
-        print(f'CV metrics: {[round(i, 4) for i in res.cv_metrics]}')
-        print(f'mean: {round(cv_mean, 4)}, std: {round(cv_std, 4)}, sharpe: {round(cv_sharpe, 4)}')
+        print(f'Public score: {public_score}')
+        if res is float:
+            print(f'metric: {round(res, 4)}')
+        else:
+            print(f'CV metrics: {[round(i, 4) for i in res]}')
+            print(f'mean: {round(cv_mean, 4)}, std: {round(cv_std, 4)}, sharpe: {round(cv_sharpe, 4)}')
         
     def _calc_sharpe(self, mean, std):
         return mean / (std + 1)
