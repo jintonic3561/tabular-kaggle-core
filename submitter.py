@@ -8,11 +8,59 @@ Created on Tue Jul 11 08:05:09 2023
 import pandas as pd
 import numpy as np
 import os
+import time
 from collections import namedtuple
-from abstract import CodeSubmitter
+from abstract import ABSSubmitter, CodeSubmitter
 
 
-class AveragingSubmitter(CodeSubmitter):
+class AveragingSubmitter(ABSSubmitter):
+    cv_id_col = 'cv_id'
+    pred_col = 'pred'
+    target_col = 'y'
+
+    def __init__(self, cv_paths, sub_paths, model, submission_comment):
+        self.cv_paths = cv_paths
+        self.sub_paths = sub_paths
+        self.model = model
+        self.submission_comment = submission_comment
+
+    def make_submission(self, experiment_params=None):
+        cv_metrics = self._evalute()
+        sub = self._get_submit_data()
+        self._submit(sub)   
+        time.sleep(15)
+        self._save_experiment(cv_metrics, params=experiment_params)
+    
+    def _evalute(self):
+        temp = self._load_csv(self.cv_paths[0])
+        cv_ids = temp[self.cv_id_col].unique()
+        cv = []
+        metrics = []
+        for id in cv_ids:
+            cv.append(temp[temp[self.cv_id_col] == id])
+        for path in self.cv_paths[1:]:
+            temp = self._load_csv(path)
+            for index, id in enumerate(cv_ids):
+                cv[index][self.pred_col] += temp[temp[self.cv_id_col] == id][self.pred_col]
+        for index in len(cv):
+            cv[index][self.pred_col] /= len(self.cv_paths)
+            metrics.append(self.model._calc_metric(cv[index]))
+        return metrics
+    
+    def _get_submit_data(self):
+        sub = self._load_csv(self.sub_paths[0])
+        for path in self.sub_paths[1:]:
+            temp = self._load_csv(path)
+            sub[self.target_col] += temp[self.target_col]
+        sub[self.target_col] /= len(self.sub_paths)
+        return sub
+    
+    def _load_csv(self, path):
+        return pd.read_csv(path)
+
+
+
+class CodeAveragingSubmitter(CodeSubmitter):
     pred_col = 'pred'
     target_col = 'y'
     
@@ -90,7 +138,7 @@ class AveragingSubmitter(CodeSubmitter):
 
 
 
-class StackingSubmitter(AveragingSubmitter):
+class CodeStackingSubmitter(CodeAveragingSubmitter):
     id_col = ''
     
     def __init__(self, stack_submitter, submitters, submission_comment):
