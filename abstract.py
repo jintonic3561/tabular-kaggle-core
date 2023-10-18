@@ -170,7 +170,6 @@ class ABSDataSplitter:
 
 
 class ABSSubmitter:
-    data_dir = './data/'
     competition_name = ''
     experiment_name = ''
     
@@ -181,7 +180,8 @@ class ABSSubmitter:
                  data_splitter: ABSDataSplitter,
                  data_postprocessor: ABSDataPostprocessor,
                  model: MLBase,
-                 submission_comment: str):
+                 submission_comment: str,
+                 submission_csv_dir: str='./submission/default/'):
         '''
         Parameters
         ----------
@@ -193,6 +193,7 @@ class ABSSubmitter:
         model: ABSModel, MLBase
         submission_comment: str
             The Message for submission.
+        submission_csv_dir: str
         '''
         
         if not self.competition_name :
@@ -207,6 +208,7 @@ class ABSSubmitter:
         self.data_postprocessor = data_postprocessor
         self.model = model
         self.submission_comment = submission_comment
+        self.submission_csv_dir = submission_csv_dir
         self.api = self._init_kaggle_api()
     
     def get_submit_data(self, test: pd.DataFrame) -> pd.DataFrame:
@@ -269,7 +271,9 @@ class ABSSubmitter:
         return res
     
     def _submit(self, test: pd.DataFrame):
-        file_name = f'{self.data_dir}submission.csv'
+        if not os.path.exists(self.submission_csv_dir):
+            os.makedirs(self.submission_csv_dir)
+        file_name = f'{self.submission_csv_dir}submission.csv'
         test.to_csv(file_name, index=False)
         self.api.competition_submit(file_name=file_name,
                                     message=self.submission_comment,
