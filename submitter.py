@@ -10,7 +10,10 @@ import numpy as np
 import os
 import time
 from collections import namedtuple
-from abstract import ABSSubmitter, CodeSubmitter
+try:
+    from abstract import ABSSubmitter, CodeSubmitter
+except ModuleNotFoundError:
+    from .abstract import ABSSubmitter, CodeSubmitter
 
 
 class AveragingSubmitter(ABSSubmitter):
@@ -18,11 +21,17 @@ class AveragingSubmitter(ABSSubmitter):
     pred_col = 'pred'
     target_col = 'y'
 
-    def __init__(self, cv_paths, sub_paths, model, submission_comment):
+    def __init__(self, cv_paths, sub_paths, model, submission_comment, submission_csv_dir='./submission/default/'):
         self.cv_paths = cv_paths
         self.sub_paths = sub_paths
-        self.model = model
-        self.submission_comment = submission_comment
+        super().__init__(data_fetcher=None,
+                         data_preprocessor=None,
+                         feature_generator=None,
+                         data_splitter=None,
+                         data_postprocessor=None,
+                         model=model,
+                         submission_comment=submission_comment,
+                         submission_csv_dir=submission_csv_dir)
 
     def make_submission(self, experiment_params=None):
         cv_metrics = self._evalute()
@@ -42,7 +51,7 @@ class AveragingSubmitter(ABSSubmitter):
             temp = self._load_csv(path)
             for index, id in enumerate(cv_ids):
                 cv[index][self.pred_col] += temp[temp[self.cv_id_col] == id][self.pred_col]
-        for index in len(cv):
+        for index in range(len(cv)):
             cv[index][self.pred_col] /= len(self.cv_paths)
             metrics.append(self.model._calc_metric(cv[index]))
         return metrics

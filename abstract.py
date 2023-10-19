@@ -235,9 +235,10 @@ class ABSSubmitter:
                         return_only: bool=False):
         data = self._process_data(dry_run=dry_run)
         train, test = self.data_splitter.train_test_split(data)
+        del data
         res = self._train_and_evaluate(train,
-                                       retrain_all_data=retrain_all_data,
-                                       save_model=save_model)
+                                        retrain_all_data=retrain_all_data,
+                                        save_model=save_model)
         sub = self.get_submit_data(test)
         self.validate_submit_data(sub)
         
@@ -257,6 +258,8 @@ class ABSSubmitter:
         data = self.data_preprocessor(data)
         data = self.feature_generator(data)
         data = self.data_postprocessor(data)
+        del self.feature_generator.df
+        self.model.categorical_columns = self.feature_generator.cat_cols
         return data
     
     def _train_and_evaluate(self, 
@@ -270,11 +273,11 @@ class ABSSubmitter:
             self.model.fit(train, save_model=save_model)
         return res
     
-    def _submit(self, test: pd.DataFrame):
+    def _submit(self, sub: pd.DataFrame):
         if not os.path.exists(self.submission_csv_dir):
             os.makedirs(self.submission_csv_dir)
         file_name = f'{self.submission_csv_dir}submission.csv'
-        test.to_csv(file_name, index=False)
+        sub.to_csv(file_name, index=False)
         self.api.competition_submit(file_name=file_name,
                                     message=self.submission_comment,
                                     competition=self.competition_name)
