@@ -6,25 +6,22 @@ Created on Fri Mar 17 07:10:20 2023
 """
 
 
-import pandas as pd
-import numpy as np
 import datetime as dt
-import torch
+import json
+import os
+import pickle
 import random
 import time
-import joblib
-import json
-import pickle
-import os
-from collections import namedtuple
-from typing import Union
-from sklearn.model_selection import KFold
+
+import numpy as np
+import pandas as pd
+import torch
 from kaggle.api.kaggle_api_extended import KaggleApi
-from mlutil.util import mlflow
-from mlutil.util.notifier import slack_notify, SlackChannel
 from mlutil.features import ABSFeatureGenerator
 from mlutil.mlbase import MLBase
-
+from mlutil.util import mlflow
+from mlutil.util.notifier import SlackChannel, slack_notify
+from sklearn.model_selection import KFold
 
 SEED = 42
 
@@ -172,16 +169,16 @@ class ABSDataSplitter:
 class ABSSubmitter:
     competition_name = ''
     experiment_name = ''
+    artifact_dir = '/kaggle/input/artifact/'
     
     def __init__(self, 
                  data_fetcher: ABSDataFetcher,
                  data_preprocessor: ABSDataPreprocessor,
                  feature_generator: ABSFeatureGenerator,
                  data_splitter: ABSDataSplitter,
-                 data_postprocessor: ABSDataPostprocessor,
+                #  data_postprocessor: ABSDataPostprocessor,
                  model: MLBase,
-                 submission_comment: str,
-                 submission_csv_dir: str='./submission/default/'):
+                 submission_comment: str):
         '''
         Parameters
         ----------
@@ -189,11 +186,10 @@ class ABSSubmitter:
         data_preprocessor: ABSDataPreprocessor
         feature_generator: ABSFeatureGenerator
         data_splitter: ABSDataSplitter
-        data_postprocessor: ABSDataPostprocessor
+        # data_postprocessor: ABSDataPostprocessor
         model: ABSModel, MLBase
         submission_comment: str
             The Message for submission.
-        submission_csv_dir: str
         '''
         
         if not self.competition_name :
@@ -205,10 +201,9 @@ class ABSSubmitter:
         self.data_preprocessor = data_preprocessor
         self.feature_generator = feature_generator
         self.data_splitter = data_splitter
-        self.data_postprocessor = data_postprocessor
+        # self.data_postprocessor = data_postprocessor
         self.model = model
         self.submission_comment = submission_comment
-        self.submission_csv_dir = submission_csv_dir
         self.api = self._init_kaggle_api()
     
     def get_submit_data(self, test: pd.DataFrame) -> pd.DataFrame:
@@ -225,15 +220,24 @@ class ABSSubmitter:
         '''
         分類の場合はoof_metricも利用可
         '''
-        return res.cv_metrics
+        cv_metrics =  res.cv_metrics
+        cv_mean = np.array(cv_metrics).mean()
+        cv_std = np.array(cv_metrics).std()
+        cv_sharpe = self._calc_sharpe(cv_mean, cv_std)
+        print(f'CV metrics: {[round(i, 4) for i in cv_metrics]}')
+        print(f'mean: {round(cv_mean, 4)}, std: {round(cv_std, 4)}, sharpe: {round(cv_sharpe, 4)}')
+        return {'cv_mean': cv_mean, 'cv_std': cv_std, 'cv_sharpe': cv_sharpe}
+    
+    def get_experiment_params(self) -> dict:
+        return {"model": self.model.model_base_name}
     
     def make_submission(self, 
-                        experiment_params: dict=None,
+                        params_info: dict={},
                         retrain_all_data: bool=False,
                         save_model: bool=True,
                         dry_run: bool=False, 
                         return_only: bool=False):
-        data = self._process_data(dry_run=dry_run)
+        data = self.process_data(dry_run=dry_run)
         train, test = self.data_splitter.train_test_split(data)
         del data
         res = self._train_and_evaluate(train,
@@ -248,18 +252,26 @@ class ABSSubmitter:
             else:
                 self._submit(sub)
                 time.sleep(15)
-                self._save_experiment(self.get_metrics(res), params=experiment_params)
+                self._save_experiment(res=res, sub=sub, params={**self.get_experiment_params(), **params_info})
         else:
             breakpoint()
-            
-            
+    
+    def process_data(self, dry_run: bool):
+        if self.feature_generator._load_features():
+            print('cached features loaded.')
+            data = self.feature_generator.df
+        else:
+            data = self._process_data(dry_run=dry_run)
+        
+        del self.feature_generator.df
+        self.model.categorical_columns = self.feature_generator.cat_cols
+        return data
+    
     def _process_data(self, dry_run: bool):
         data = self.data_fetcher(dry_run=dry_run)
         data = self.data_preprocessor(data)
         data = self.feature_generator(data)
-        data = self.data_postprocessor(data)
-        del self.feature_generator.df
-        self.model.categorical_columns = self.feature_generator.cat_cols
+        # data = self.data_postprocessor(data)
         return data
     
     def _train_and_evaluate(self, 
@@ -300,18 +312,10 @@ class ABSSubmitter:
         score = float(score) if score else np.nan
         return score
     
-    def _save_experiment(self, res: Union[list, float], params: dict):
+    def _save_experiment(self, res: dict, sub: pd.DataFrame, params: dict):
         public_score = self._get_public_score()
-        metrics = {'public_score': public_score}
-        if res is float:
-            metrics['metric'] = res
-        else:
-            cv_mean = np.array(res).mean()
-            cv_std = np.array(res).std()
-            cv_sharpe = self._calc_sharpe(cv_mean, cv_std)
-            metrics['cv_mean'] = cv_mean
-            metrics['cv_std'] = cv_std
-            metrics['cv_sharpe'] = cv_sharpe
+        metrics = self.get_metrics(res)
+        metrics['public_score'] = public_score
         mlflow.run(experiment_name=self.experiment_name,
                    run_name=self.submission_comment,
                    params=params,
@@ -319,44 +323,16 @@ class ABSSubmitter:
                    artifact_paths=[self.model.model_dir])
         message = f'experiment finished. metrics:\n{json.dumps(metrics)}'
         slack_notify(message, channel=SlackChannel.regular)
+        sub.to_csv(os.path.join(self.artifact_dir, f'submission/{self.submission_comment}/submission.csv'), index=False)
         print(f'Public score: {public_score}')
-        if res is float:
-            print(f'metric: {round(res, 4)}')
-        else:
-            print(f'CV metrics: {[round(i, 4) for i in res]}')
-            print(f'mean: {round(cv_mean, 4)}, std: {round(cv_std, 4)}, sharpe: {round(cv_sharpe, 4)}')
         
     def _calc_sharpe(self, mean, std):
         return mean / (std + 1)
 
 
 
-class CodeSubmitter(ABSSubmitter):
-    memory_file_name = 'features.parquet'
-    
-    def experiment(self,
-                   data_process_id='',
-                   params={},
-                   retrain_all_data: bool=False,
-                   dry_run: bool=False,
-                   return_only: bool=False):
-        df = self.data_fetcher(dry_run=dry_run)
-        df = self._process_data(memory_id=data_process_id)
-        res = self._train_and_evaluate(features=df,
-                                       retrain_all_data=retrain_all_data)
-        if not dry_run:
-            if return_only:
-                return res
-            else:
-                experiment_params = {**self.get_experiment_params(), **params}
-                self._save_experiment(self.get_metrics(res), params=experiment_params)
-        else:
-            breakpoint()
-        
+class CodeSubmitter(ABSSubmitter):    
     def estimate(self, test: pd.DataFrame, sub: pd.DataFrame, proba: bool) -> pd.DataFrame:
-        raise NotImplementedError()
-    
-    def get_experiment_params(self) -> dict:
         raise NotImplementedError()
     
     def test_env_simulator(self) -> pd.DataFrame:
@@ -367,26 +343,30 @@ class CodeSubmitter(ABSSubmitter):
         '''
         raise NotImplementedError()
     
+    def experiment(self,
+                   params_info={},
+                   retrain_all_data: bool=False,
+                   dry_run: bool=False,
+                   return_only: bool=False):
+        df = self.process_data(dry_run=dry_run)
+        res = self._train_and_evaluate(features=df,
+                                       retrain_all_data=retrain_all_data)
+        if not dry_run:
+            if return_only:
+                return res
+            else:
+                experiment_params = {**self.get_experiment_params(), **params_info}
+                self._save_experiment(res, params=experiment_params)
+        else:
+            breakpoint()
+    
     def load_model(self):
         self.model.load_model()
-            
-    def _process_data(self, df: pd.DataFrame, memory_id: str=''):
-        memory_dir = os.path.join(self.data_dir, 'processed_data', memory_id)
-        data_path = os.path.join(memory_dir, self.memory_file_name)
-        if memory_id and os.path.exists(memory_dir):
-            data = pd.read_parquet(data_path)
-        else:
-            data = self.data_preprocessor(data)
-            data = self.feature_generator(data)
-            data = self.data_postprocessor(data)
-            if memory_id:
-                os.mkdir(memory_dir)
-                data.to_parquet(data_path)
-        return data
     
-    def _save_experiment(self, f1_score, params):
+    def _save_experiment(self, res, params):
         # Note: コードコンペのためsubmitおよびPublic scoreの記録は手動
-        metrics = {'cv_f1_score': f1_score, 'public_score': 0.0}
+        metrics = self.get_metrics(res)
+        metrics['public_score'] = 0.0
         mlflow.run(experiment_name=self.experiment_name,
                    run_name=self.submission_comment,
                    params=params,
@@ -394,7 +374,4 @@ class CodeSubmitter(ABSSubmitter):
                    artifact_paths=[self.model.model_dir, self.model.csv_dir])
         message = f'experiment finished. metrics:\n{json.dumps(metrics)}'
         slack_notify(message, SlackChannel.regular)
-        print(f'CV F1 score: {f1_score:.5f}')
-
-
 
