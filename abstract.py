@@ -362,11 +362,10 @@ class CodeSubmitter(ABSSubmitter):
     ) -> pd.DataFrame:
         raise NotImplementedError()
 
-    def test_env_simulator(self) -> pd.DataFrame:
+    def get_mock_api(self):
         """
-        Yields
-        -------
-        pd.DataFrame
+        from public_timeseries_testing_util
+        return MockAPI
         """
         raise NotImplementedError()
 
@@ -400,7 +399,7 @@ class CodeSubmitter(ABSSubmitter):
             run_name=self.submission_comment,
             params=params,
             metrics=metrics,
-            artifact_paths=[self.model.model_dir, self.model.csv_dir],
+            artifact_paths=[self.model.model_dir, self.model.oof_dir],
         )
         message = f"experiment finished. metrics:\n{json.dumps(metrics)}"
         slack_notify(message, SlackChannel.regular)
