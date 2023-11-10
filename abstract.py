@@ -178,6 +178,7 @@ class ABSSubmitter:
         "artifact/figure",
         "artifact/oof_pred",
         "artifact/temp",
+        "artifact/dataset",
         "mlflow",
         "note",
         ".gitignore",
@@ -294,19 +295,22 @@ class ABSSubmitter:
         self,
         dataset_title: str,
         dataset_directory: str,
-        root_dir: str = "/kaggle/input/",
+        root_dir: str = None,
     ):
         if not os.path.exists(dataset_directory):
             os.mkdir(dataset_directory)
+        if not root_dir:
+            root_dir = os.environ["DATASET_ROOT_DIR"]
         self._zip_dir(
             root_dir=root_dir,
             output_path=os.path.join(dataset_directory, "dataset.zip"),
             ignore=self.dataset_ignore,
         )
         self._init_dataset_metadata(title=dataset_title, directory=dataset_directory)
-        self._upload_dataset(
+        res = self._upload_dataset(
             dataset_title=dataset_title, dataset_directory=dataset_directory
         )
+        return res
 
     def seed_everything(self, seed=None):
         if seed is None:
@@ -395,11 +399,13 @@ class ABSSubmitter:
             user=self.api.config_values[self.api.CONFIG_NAME_USER]
         )
         if any([dataset_title in str(i) for i in ds_list]):
-            self.api.dataset_create_version(
+            res = self.api.dataset_create_version(
                 folder=dataset_directory, version_notes="update"
             )
         else:
-            self.api.dataset_create_new(folder=dataset_directory)
+            res = self.api.dataset_create_new(folder=dataset_directory)
+
+        return res
 
     def _get_public_score(self) -> float:
         sub = self.api.competitions_submissions_list(self.competition_name)
