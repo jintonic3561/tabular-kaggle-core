@@ -17,7 +17,6 @@ import zipfile
 import numpy as np
 import pandas as pd
 import torch
-from kaggle.api.kaggle_api_extended import KaggleApi
 from sklearn.model_selection import KFold
 
 try:
@@ -30,6 +29,11 @@ except ImportError:
     from mymodules.mlutil.mlbase import MLBase
     from mymodules.mlutil.util import mlflow
     from mymodules.mlutil.util.notifier import SlackChannel, slack_notify
+
+try:
+    from kaggle.api.kaggle_api_extended import KaggleApi
+except OSError as e:
+    print(e)
 
 SEED = 42
 
@@ -175,7 +179,9 @@ class ABSSubmitter:
         "artifact/oof_pred",
         "artifact/temp",
         "mlflow",
+        "note",
         ".gitignore",
+        ".git",
     ]
 
     def __init__(
@@ -287,19 +293,20 @@ class ABSSubmitter:
     def upload_dataset(
         self,
         dataset_title: str,
-        dateset_directory: str,
-        additional_ignore_dirs: list = [],
+        dataset_directory: str,
         root_dir: str = "/kaggle/input/",
     ):
-        if not os.path.exists(dateset_directory):
-            os.mkdir(dateset_directory)
+        if not os.path.exists(dataset_directory):
+            os.mkdir(dataset_directory)
         self._zip_dir(
             root_dir=root_dir,
-            output_path=os.path.join(dateset_directory, "dataset.zip"),
-            ignore_dirs=self.dataset_ignore + additional_ignore_dirs,
+            output_path=os.path.join(dataset_directory, "dataset.zip"),
+            ignore=self.dataset_ignore,
         )
-        self._init_dataset_metadata(title=dataset_title, directory=dateset_directory)
-        self.api.dataset_create_new(folder=dateset_directory)
+        self._init_dataset_metadata(title=dataset_title, directory=dataset_directory)
+        self._upload_dataset(
+            dataset_title=dataset_title, dataset_directory=dataset_directory
+        )
 
     def seed_everything(self, seed=None):
         if seed is None:
@@ -354,13 +361,15 @@ class ABSSubmitter:
             competition=self.competition_name,
         )
 
-    def _zip_dir(self, root_dir, output_path, ignore_dirs=[]):
+    def _zip_dir(self, root_dir, output_path, ignore=[]):
         with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zip:
             # dirname, sub dirs, filenames
             for dir_, _, file_names in os.walk(root_dir):
                 # 特定のサブフォルダがignore_dirsに含まれていない場合のみzipに追加する
-                if all([ignore_dir not in dir_ for ignore_dir in ignore_dirs]):
+                if all([i not in dir_ for i in ignore]):
                     for file_name in file_names:
+                        if file_name in ignore:
+                            continue
                         file_path = os.path.join(dir_, file_name)
                         relative_path = os.path.relpath(file_path, root_dir)
                         zip.write(file_path, relative_path)
@@ -369,17 +378,28 @@ class ABSSubmitter:
         if not os.path.isdir(directory):
             raise ValueError("Invalid directory: " + directory)
 
-        ref = self.config_values[self.CONFIG_NAME_USER] + f"/{title}"
+        ref = self.api.config_values[self.api.CONFIG_NAME_USER] + f"/{title}"
         licenses = []
         default_license = {"name": "CC0-1.0"}
         licenses.append(default_license)
 
         meta_data = {"title": title, "id": ref, "licenses": licenses}
-        meta_file = os.path.join(directory, self.DATASET_METADATA_FILE)
+        meta_file = os.path.join(directory, self.api.DATASET_METADATA_FILE)
         with open(meta_file, "w") as f:
             json.dump(meta_data, f, indent=2)
 
         print("Data package template written to: " + meta_file)
+
+    def _upload_dataset(self, dataset_title: str, dataset_directory: str):
+        ds_list = self.api.dataset_list(
+            user=self.api.config_values[self.api.CONFIG_NAME_USER]
+        )
+        if any([dataset_title in str(i) for i in ds_list]):
+            self.api.dataset_create_version(
+                folder=dataset_directory, version_notes="update"
+            )
+        else:
+            self.api.dataset_create_new(folder=dataset_directory)
 
     def _get_public_score(self) -> float:
         sub = self.api.competitions_submissions_list(self.competition_name)
