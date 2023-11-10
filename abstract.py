@@ -12,6 +12,7 @@ import os
 import pickle
 import random
 import time
+import zipfile
 
 import numpy as np
 import pandas as pd
@@ -162,6 +163,20 @@ class ABSSubmitter:
     competition_name = ""
     experiment_name = ""
     artifact_dir = "/kaggle/input/artifact/"
+    dataset_ignore = [
+        "__pycache__",
+        ".ipynb_checkpoints",
+        ".devcontainer",
+        "pytest_cache",
+        ".venv",
+        ".vscode",
+        "artifact/feature",
+        "artifact/figure",
+        "artifact/oof_pred",
+        "artifact/temp",
+        "mlflow",
+        ".gitignore",
+    ]
 
     def __init__(
         self,
@@ -269,6 +284,32 @@ class ABSSubmitter:
         self.model.categorical_columns = self.feature_generator.cat_cols
         return data
 
+    def upload_dataset(
+        self,
+        dataset_title: str,
+        dateset_directory: str,
+        additional_ignore_dirs: list = [],
+        root_dir: str = "/kaggle/input/",
+    ):
+        if not os.path.exists(dateset_directory):
+            os.mkdir(dateset_directory)
+        self._zip_dir(
+            root_dir=root_dir,
+            output_path=os.path.join(dateset_directory, "dataset.zip"),
+            ignore_dirs=self.dataset_ignore + additional_ignore_dirs,
+        )
+        self._init_dataset_metadata(title=dataset_title, directory=dateset_directory)
+        self.api.dataset_create_new(folder=dateset_directory)
+
+    def seed_everything(self, seed=None):
+        if seed is None:
+            seed = SEED
+        random.seed(seed)
+        os.environ["PYTHONHASHseed"] = str(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
     def _process_data(self, dry_run: bool):
         data = self.data_fetcher(dry_run=dry_run)
         data = self.data_preprocessor(data)
@@ -291,6 +332,17 @@ class ABSSubmitter:
             self.model.fit(train, save_model=save_model)
         return res
 
+    def _init_kaggle_api(self) -> any:
+        # kaggle notebook上で失敗するため
+        try:
+            from kaggle.api.kaggle_api_extended import KaggleApi
+
+            api = KaggleApi()
+            api.authenticate()
+            return api
+        except OSError:
+            return None
+
     def _submit(self, sub: pd.DataFrame):
         if not os.path.exists(self.submission_csv_dir):
             os.makedirs(self.submission_csv_dir)
@@ -302,16 +354,32 @@ class ABSSubmitter:
             competition=self.competition_name,
         )
 
-    def _init_kaggle_api(self) -> any:
-        # kaggle notebook上で失敗するため
-        try:
-            from kaggle.api.kaggle_api_extended import KaggleApi
+    def _zip_dir(self, root_dir, output_path, ignore_dirs=[]):
+        with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zip:
+            # dirname, sub dirs, filenames
+            for dir_, _, file_names in os.walk(root_dir):
+                # 特定のサブフォルダがignore_dirsに含まれていない場合のみzipに追加する
+                if all([ignore_dir not in dir_ for ignore_dir in ignore_dirs]):
+                    for file_name in file_names:
+                        file_path = os.path.join(dir_, file_name)
+                        relative_path = os.path.relpath(file_path, root_dir)
+                        zip.write(file_path, relative_path)
 
-            api = KaggleApi()
-            api.authenticate()
-            return api
-        except OSError:
-            return None
+    def _init_dataset_metadata(self, title, directory):
+        if not os.path.isdir(directory):
+            raise ValueError("Invalid directory: " + directory)
+
+        ref = self.config_values[self.CONFIG_NAME_USER] + f"/{title}"
+        licenses = []
+        default_license = {"name": "CC0-1.0"}
+        licenses.append(default_license)
+
+        meta_data = {"title": title, "id": ref, "licenses": licenses}
+        meta_file = os.path.join(directory, self.DATASET_METADATA_FILE)
+        with open(meta_file, "w") as f:
+            json.dump(meta_data, f, indent=2)
+
+        print("Data package template written to: " + meta_file)
 
     def _get_public_score(self) -> float:
         sub = self.api.competitions_submissions_list(self.competition_name)
@@ -345,15 +413,6 @@ class ABSSubmitter:
 
     def _calc_sharpe(self, mean, std):
         return mean / (std + 1)
-
-    def seed_everything(self, seed=None):
-        if seed is None:
-            seed = SEED
-        random.seed(seed)
-        os.environ["PYTHONHASHseed"] = str(seed)
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
 
 
 class CodeSubmitter(ABSSubmitter):
