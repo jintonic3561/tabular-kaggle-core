@@ -194,6 +194,7 @@ class ABSSubmitter:
         #  data_postprocessor: ABSDataPostprocessor,
         model: MLBase,
         submission_comment: str,
+        experiment_params: dict = {},
     ):
         """
         Parameters
@@ -206,6 +207,8 @@ class ABSSubmitter:
         model: ABSModel, MLBase
         submission_comment: str
             The Message for submission.
+        experiment_params: dict
+            The parameters for experiment. e.g. {"n_iter": "1000"}
         """
 
         if not self.competition_name:
@@ -220,6 +223,7 @@ class ABSSubmitter:
         # self.data_postprocessor = data_postprocessor
         self.model = model
         self.submission_comment = submission_comment
+        self.experiment_params = experiment_params
         self.api = self._init_kaggle_api()
 
     def get_submit_data(self, test: pd.DataFrame) -> pd.DataFrame:
@@ -247,11 +251,12 @@ class ABSSubmitter:
         return {"cv_mean": cv_mean, "cv_std": cv_std, "cv_sharpe": cv_sharpe}
 
     def get_experiment_params(self) -> dict:
-        return {"model": self.model.model_base_name}
+        params = {"model": self.model.model_base_name}
+        params = {**params, **self.experiment_params}
+        return params
 
     def make_submission(
         self,
-        params_info: dict = {},
         retrain_all_data: bool = False,
         save_model: bool = True,
         dry_run: bool = False,
@@ -275,7 +280,7 @@ class ABSSubmitter:
                 self._save_experiment(
                     res=res,
                     sub=sub,
-                    params={**self.get_experiment_params(), **params_info},
+                    params=self.get_experiment_params(),
                 )
         else:
             breakpoint()
@@ -456,7 +461,6 @@ class CodeSubmitter(ABSSubmitter):
 
     def experiment(
         self,
-        params_info={},
         retrain_all_data: bool = False,
         dry_run: bool = False,
         return_only: bool = False,
@@ -467,8 +471,7 @@ class CodeSubmitter(ABSSubmitter):
             if return_only:
                 return res
             else:
-                experiment_params = {**self.get_experiment_params(), **params_info}
-                self._save_experiment(res, params=experiment_params)
+                self._save_experiment(res, params=self.get_experiment_params())
         else:
             breakpoint()
 
