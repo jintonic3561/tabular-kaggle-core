@@ -450,6 +450,9 @@ class CodeSubmitter(ABSSubmitter):
     def estimate(
         self, test: pd.DataFrame, sub: pd.DataFrame, proba: bool
     ) -> pd.DataFrame:
+        """
+        feature_generatorを呼ぶ際にはsave_features=Falseにする
+        """
         raise NotImplementedError()
 
     def get_mock_api(self):
