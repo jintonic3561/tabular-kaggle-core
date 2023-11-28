@@ -160,26 +160,37 @@ class CodeAveragingSubmitter(CodeSubmitter):
 
         oof["pred"] = oof[pred_cols].mean(axis=1)
         oof = oof.drop(columns=pred_cols)
-        submitter.model._save_oof_pred(oof)
+        self._save_oof(oof)
         metrics = []
         for i in oof["cv_id"].unique():
             temp = oof[oof["cv_id"] == i]
             metrics.append(submitter.model._calc_metric(temp))
 
+        if submitter.model.regression:
+            oof_metrics = submitter.model._calc_metric(oof)
+        else:
+            oof_metrics = submitter.model.calc_classification_metrics(oof)
+
         Result = namedtuple(
             "Result",
             ["cv_metrics", "oof_metrics", "cv_preds", "permutaion_importance"],
         )
-        if submitter.model.regression:
-            oof_metric = submitter.model._calc_metric(oof)
-            return Result(metrics, oof_metric, oof, None)
-        else:
-            clf_metrics = submitter.model.calc_classification_metrics(oof)
-            return Result(metrics, clf_metrics, oof, None)
+        return Result(metrics, oof_metrics, oof, None)
 
     def _load_oof(self, oof_dir):
         path = os.path.join(oof_dir, "oof_pred.csv")
         return pd.read_csv(path)
+
+    def _save_oof(self, oof):
+        path = os.path.join(
+            os.environ["DATASET_ROOT_DIR"],
+            "artifct/oof_pred/",
+            self.submission_comment,
+            "oof_pred.csv",
+        )
+        if not os.path.exists(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path))
+        oof.to_csv(path, index=False)
 
 
 class CodeStackingSubmitter(CodeAveragingSubmitter):
