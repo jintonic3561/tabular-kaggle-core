@@ -10,6 +10,7 @@ import time
 from collections import namedtuple
 
 import numpy as np
+import optuna
 import pandas as pd
 
 try:
@@ -144,6 +145,14 @@ class CodeAveragingSubmitter(CodeSubmitter):
         return params
 
     def _train_and_evaluate(self):
+        oof, pred_cols = self._merge_predition()
+        oof["pred"] = oof[pred_cols].mean(axis=1)
+        oof = oof.drop(columns=pred_cols)
+        self._save_oof(oof)
+        res = self._calc_metric(oof)
+        return res
+
+    def _merge_predition(self):
         oof = None
         pred_cols = []
         for i, submitter in enumerate(self.submitters):
@@ -157,19 +166,19 @@ class CodeAveragingSubmitter(CodeSubmitter):
                     columns={self.pred_col: pred_col}
                 )
                 oof = pd.merge(oof, temp, how="inner", on=self.merge_keys)
+                assert len(oof) == len(temp)
+        return oof, pred_cols
 
-        oof["pred"] = oof[pred_cols].mean(axis=1)
-        oof = oof.drop(columns=pred_cols)
-        self._save_oof(oof)
+    def _calc_metric(self, oof):
         metrics = []
         for i in oof["cv_id"].unique():
             temp = oof[oof["cv_id"] == i]
-            metrics.append(submitter.model._calc_metric(temp))
+            metrics.append(self.submitters[0].model._calc_metric(temp))
 
-        if submitter.model.regression:
-            oof_metrics = submitter.model._calc_metric(oof)
+        if self.submitters[0].model.regression:
+            oof_metrics = self.submitters[0].model._calc_metric(oof)
         else:
-            oof_metrics = submitter.model.calc_classification_metrics(oof)
+            oof_metrics = self.submitters[0].model.calc_classification_metrics(oof)
 
         Result = namedtuple(
             "Result",
@@ -191,6 +200,55 @@ class CodeAveragingSubmitter(CodeSubmitter):
         if not os.path.exists(os.path.dirname(path)):
             os.makedirs(os.path.dirname(path))
         oof.to_csv(path, index=False)
+
+
+class CodeBlendingSubmitter(CodeAveragingSubmitter):
+    def __init__(
+        self,
+        submitters,
+        merge_keys,
+        submission_comment,
+        experiment_params={},
+        n_trials=100,
+    ):
+        super().__init__(
+            submitters=submitters,
+            merge_keys=merge_keys,
+            submission_comment=submission_comment,
+            experiment_params=experiment_params,
+        )
+        self.n_trials = n_trials
+
+    def _train_and_evaluate(self):
+        self.oof, self.pred_cols = self._merge_predition()
+        best_weights = self._study()
+        oof = self.oof.drop(columns=[i for i in self.oof.columns if "pred" in i])
+        oof["pred"] = 0.0
+        for w, c in zip(best_weights, self.pred_cols):
+            oof["pred"] += w * self.oof[c]
+        self._save_oof(oof)
+        res = self._calc_metric(oof)
+        return res
+
+    def _objective(self, trial):
+        model_num = len(self.pred_cols)
+        weights = [trial.suggest_uniform(f"w_{i}", 0, 1) for i in range(model_num)]
+        weights = np.array(weights) / np.sum(weights)
+        temp = self.oof.drop(columns=[i for i in self.oof.columns if "pred" in i])
+        temp["pred"] = 0.0
+        for w, c in zip(weights, self.pred_cols):
+            temp["pred"] += w * self.oof[c]
+        res = self._calc_metric(temp)
+        loss = round(np.mean(res.cv_metrics), 4)
+        print(trial.numner, loss)
+        return loss
+
+    def _study(self):
+        study = optuna.create_study(direction="minimize")
+        study.optimize(self._objective, n_trials=self.n_trials)
+        best_weights = study.best_trial.params
+        print("Best weights:", best_weights)
+        return best_weights
 
 
 class CodeStackingSubmitter(CodeAveragingSubmitter):
