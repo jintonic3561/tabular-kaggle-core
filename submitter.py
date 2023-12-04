@@ -193,7 +193,7 @@ class CodeAveragingSubmitter(CodeSubmitter):
     def _save_oof(self, oof):
         path = os.path.join(
             os.environ["DATASET_ROOT_DIR"],
-            "artifct/oof_pred/",
+            "artifact/oof_pred/",
             self.submission_comment,
             "oof_pred.csv",
         )
@@ -221,10 +221,10 @@ class CodeBlendingSubmitter(CodeAveragingSubmitter):
 
     def _train_and_evaluate(self):
         self.oof, self.pred_cols = self._merge_predition()
-        best_weights = self._study()
+        self.best_weights = self._study()
         oof = self.oof.drop(columns=[i for i in self.oof.columns if "pred" in i])
         oof["pred"] = 0.0
-        for w, c in zip(best_weights, self.pred_cols):
+        for w, c in zip(self.best_weights, self.pred_cols):
             oof["pred"] += w * self.oof[c]
         self._save_oof(oof)
         res = self._calc_metric(oof)
@@ -232,7 +232,7 @@ class CodeBlendingSubmitter(CodeAveragingSubmitter):
 
     def _objective(self, trial):
         model_num = len(self.pred_cols)
-        weights = [trial.suggest_uniform(f"w_{i}", 0, 1) for i in range(model_num)]
+        weights = [trial.suggest_float(f"w_{i}", 0, 1) for i in range(model_num)]
         weights = np.array(weights) / np.sum(weights)
         temp = self.oof.drop(columns=[i for i in self.oof.columns if "pred" in i])
         temp["pred"] = 0.0
@@ -240,7 +240,6 @@ class CodeBlendingSubmitter(CodeAveragingSubmitter):
             temp["pred"] += w * self.oof[c]
         res = self._calc_metric(temp)
         loss = round(np.mean(res.cv_metrics), 4)
-        print(trial.numner, loss)
         return loss
 
     def _study(self):
@@ -248,7 +247,7 @@ class CodeBlendingSubmitter(CodeAveragingSubmitter):
         study.optimize(self._objective, n_trials=self.n_trials)
         best_weights = study.best_trial.params
         print("Best weights:", best_weights)
-        return best_weights
+        return list(best_weights.values())
 
 
 class CodeStackingSubmitter(CodeAveragingSubmitter):
