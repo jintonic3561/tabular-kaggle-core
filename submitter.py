@@ -5,6 +5,7 @@ Created on Tue Jul 11 08:05:09 2023
 @author: jintonic
 """
 
+import itertools
 import os
 import time
 from collections import namedtuple
@@ -82,17 +83,48 @@ class AveragingSubmitter(ABSSubmitter):
         return pd.read_csv(path)
 
 
-class CodeAveragingSubmitter(CodeSubmitter):
+class CodeBlendingSubmitter(CodeSubmitter):
     pred_col = "pred"
     target_col = "y"
 
     def __init__(
-        self, submitters, merge_keys, submission_comment, experiment_params={}
+        self,
+        submitters,
+        merge_keys,
+        submission_comment,
+        experiment_params={},
+        weights=None,
+        optimize=False,
+        optimize_method="grid",
+        optimize_direction="minimize",
+        n_trials=100,
+        search_grid=None,
     ):
+        """
+        defaultはAveraging
+            - weights=None and optimize=False ならAveraging
+            - weights=None and optimize=True ならBlending探索
+            - weights!=NoneならBlending固定
+
+        探索方法はgrid or optuna
+        gridの場合は、カスタムのsearch_gridを指定可能
+        """
+
         self.submitters = submitters
         self.merge_keys = merge_keys
         self.submission_comment = submission_comment
         self.experiment_params = experiment_params
+
+        if weights is None and not optimize:
+            self.weights = [1 / len(submitters) for _ in range(len(submitters))]
+        else:
+            self.weights = weights
+        self.optimize = optimize
+        self.optimize_method = optimize_method
+        self.optimize_direction = optimize_direction
+        self.n_trials = n_trials
+        self.search_grid = search_grid
+
         # dummy
         self.model = self.submitters[0].model
 
@@ -145,12 +177,23 @@ class CodeAveragingSubmitter(CodeSubmitter):
         return params
 
     def _train_and_evaluate(self):
-        oof, pred_cols = self._merge_predition()
-        oof["pred"] = oof[pred_cols].mean(axis=1)
-        oof = oof.drop(columns=pred_cols)
+        # Note: optunaの場合のobjectiveに対応するためAttributeにする
+        self.oof, self.pred_cols = self._merge_predition()
+        if self.weights is None:
+            self._optimize_weights()
+
+        oof = self._blending(weights=self.weights)
         self._save_oof(oof)
         res = self._calc_metric(oof)
         return res
+
+    def _blending(self, weights):
+        temp = self.oof.copy()
+        temp["pred"] = 0.0
+        for w, c in zip(weights, self.pred_cols):
+            temp["pred"] += w * self.oof[c]
+        temp = temp.drop(columns=self.pred_cols)
+        return temp
 
     def _merge_predition(self):
         oof = None
@@ -201,56 +244,60 @@ class CodeAveragingSubmitter(CodeSubmitter):
             os.makedirs(os.path.dirname(path))
         oof.to_csv(path, index=False)
 
+    def _optimize_weights(self):
+        if self.optimize_method == "grid":
+            self.weights = self._optimize_with_grid()
+        elif self.optimize_method == "optuna":
+            self.weights = self._optimize_with_optuna()
+        else:
+            raise ValueError("optimize_method must be grid or optuna.")
 
-class CodeBlendingSubmitter(CodeAveragingSubmitter):
-    def __init__(
-        self,
-        submitters,
-        merge_keys,
-        submission_comment,
-        experiment_params={},
-        n_trials=100,
-    ):
-        super().__init__(
-            submitters=submitters,
-            merge_keys=merge_keys,
-            submission_comment=submission_comment,
-            experiment_params=experiment_params,
+    def _get_objective(self, cv_result) -> float:
+        return round(np.mean(cv_result.cv_metrics), 4)
+
+    def _optimize_with_grid(self):
+        weights_list = []
+        scores = []
+        if self.search_grid is None:
+            self.search_grid = self._get_params_grid()
+        for weights in self.search_grid:
+            temp = self._blending(weights)
+            res = self._calc_metric(temp)
+            score = self._get_objective(res)
+            weights_list.append(weights)
+            scores.append(score)
+
+        best_weights = weights_list[np.argmin(scores)]
+        print("Best weights:", best_weights, "Best score:", np.min(scores))
+        return best_weights
+
+    def _get_params_grid(self, unit=0.01):
+        # 3つのパラメータのすべての組み合わせを作成
+        grid = list(
+            itertools.product(np.arange(0, 1.1, unit), repeat=len(self.submitters))
         )
-        self.n_trials = n_trials
+        # 各組み合わせの合計が1になる組み合わせだけをフィルタリング
+        grid = [i for i in grid if np.isclose(sum(i), 1, atol=unit / 10)]
+        return grid
 
-    def _train_and_evaluate(self):
-        self.oof, self.pred_cols = self._merge_predition()
-        self.best_weights = self._study()
-        oof = self.oof.drop(columns=[i for i in self.oof.columns if "pred" in i])
-        oof["pred"] = 0.0
-        for w, c in zip(self.best_weights, self.pred_cols):
-            oof["pred"] += w * self.oof[c]
-        self._save_oof(oof)
-        res = self._calc_metric(oof)
-        return res
-
-    def _objective(self, trial):
+    def _optuna_objective(self, trial):
         model_num = len(self.pred_cols)
         weights = [trial.suggest_float(f"w_{i}", 0, 1) for i in range(model_num)]
         weights = np.array(weights) / np.sum(weights)
-        temp = self.oof.drop(columns=[i for i in self.oof.columns if "pred" in i])
-        temp["pred"] = 0.0
-        for w, c in zip(weights, self.pred_cols):
-            temp["pred"] += w * self.oof[c]
+        temp = self._blending(weights)
         res = self._calc_metric(temp)
-        loss = round(np.mean(res.cv_metrics), 4)
-        return loss
+        score = self._get_objective(res)
+        return score
 
-    def _study(self):
-        study = optuna.create_study(direction="minimize")
-        study.optimize(self._objective, n_trials=self.n_trials)
+    def _optimize_with_optuna(self):
+        study = optuna.create_study(direction=self.optimize_direction)
+        study.optimize(self._optuna_objective, n_trials=self.n_trials)
         best_weights = study.best_trial.params
         print("Best weights:", best_weights)
         return list(best_weights.values())
 
 
-class CodeStackingSubmitter(CodeAveragingSubmitter):
+class CodeStackingSubmitter(CodeBlendingSubmitter):
     id_col = ""
 
     def __init__(self, stack_submitter, submitters, submission_comment):

@@ -493,3 +493,6 @@ class CodeSubmitter(ABSSubmitter):
         )
         message = f"experiment finished. metrics:\n{json.dumps(metrics)}"
         slack_notify(message, SlackChannel.regular)
+
+    def set_last_fold_model(self):
+        self.model.model = [self.model.model[-1]]
