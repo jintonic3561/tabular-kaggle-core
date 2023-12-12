@@ -13,6 +13,7 @@ from collections import namedtuple
 import numpy as np
 import optuna
 import pandas as pd
+from tqdm import tqdm
 
 try:
     from abstract import ABSSubmitter, CodeSubmitter
@@ -171,37 +172,38 @@ class CodeBlendingSubmitter(CodeSubmitter):
         return sub
 
     def get_experiment_params(self):
-        params = {"model_name": "ensemble"}
+        params = {"model": "ensemble"}
         for index, submitter in enumerate(self.submitters):
             params[f"element_{index}"] = submitter.model.__class__.__name__
+        for index, weights in enumerate(self.weights):
+            params[f"weight_{index}"] = weights
         return params
 
     def _train_and_evaluate(self):
         # Note: optunaの場合のobjectiveに対応するためAttributeにする
-        self.oof, self.pred_cols = self._merge_predition()
+        self.oof = self._merge_predition()
         if self.weights is None:
             self._optimize_weights()
 
-        oof = self._blending(weights=self.weights)
+        oof = self._blending(df=self.oof, weights=self.weights)
         self._save_oof(oof)
         res = self._calc_metric(oof)
         return res
 
-    def _blending(self, weights):
-        temp = self.oof.copy()
+    def _blending(self, df, weights):
+        temp = df.copy()
         temp["pred"] = 0.0
-        for w, c in zip(weights, self.pred_cols):
-            temp["pred"] += w * self.oof[c]
-        temp = temp.drop(columns=self.pred_cols)
+        pred_cols = self._get_pred_cols()
+        for w, c in zip(weights, pred_cols):
+            temp["pred"] += w * temp[c]
+        temp = temp.drop(columns=pred_cols)
         return temp
 
     def _merge_predition(self):
         oof = None
-        pred_cols = []
         for i, submitter in enumerate(self.submitters):
             temp = self._load_oof(submitter.model.oof_dir)
             pred_col = f"{self.pred_col}_{i}"
-            pred_cols.append(pred_col)
             if oof is None:
                 oof = temp.rename(columns={self.pred_col: pred_col})
             else:
@@ -210,7 +212,10 @@ class CodeBlendingSubmitter(CodeSubmitter):
                 )
                 oof = pd.merge(oof, temp, how="inner", on=self.merge_keys)
                 assert len(oof) == len(temp)
-        return oof, pred_cols
+        return oof
+
+    def _get_pred_cols(self):
+        return [f"{self.pred_col}_{i}" for i in range(len(self.submitters))]
 
     def _calc_metric(self, oof):
         metrics = []
@@ -260,8 +265,8 @@ class CodeBlendingSubmitter(CodeSubmitter):
         scores = []
         if self.search_grid is None:
             self.search_grid = self._get_params_grid()
-        for weights in self.search_grid:
-            temp = self._blending(weights)
+        for weights in tqdm(self.search_grid):
+            temp = self._blending(df=self.oof, weights=weights)
             res = self._calc_metric(temp)
             score = self._get_objective(res)
             weights_list.append(weights)
@@ -281,10 +286,10 @@ class CodeBlendingSubmitter(CodeSubmitter):
         return grid
 
     def _optuna_objective(self, trial):
-        model_num = len(self.pred_cols)
+        model_num = len(self.submitters)
         weights = [trial.suggest_float(f"w_{i}", 0, 1) for i in range(model_num)]
         weights = np.array(weights) / np.sum(weights)
-        temp = self._blending(weights)
+        temp = self._blending(df=self.oof, weights=weights)
         res = self._calc_metric(temp)
         score = self._get_objective(res)
         return score
@@ -295,6 +300,10 @@ class CodeBlendingSubmitter(CodeSubmitter):
         best_weights = study.best_trial.params
         print("Best weights:", best_weights)
         return list(best_weights.values())
+
+    def set_last_fold_model(self):
+        for i in self.submitters:
+            i.set_last_fold_model()
 
 
 class CodeStackingSubmitter(CodeBlendingSubmitter):
