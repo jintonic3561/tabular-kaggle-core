@@ -159,17 +159,9 @@ class CodeBlendingSubmitter(CodeSubmitter):
 
     def estimate(self, test, sub):
         """
-        Note: 特徴量作成が重複するため、overrideして個別に高速化可能
+        Note: 特徴量作成が重複するため、コンペ設計に合わせて実装する
         """
-        preds = []
-        for i in self.submitters:
-            sub = i.estimate(test=test.copy(), sub=sub.copy(), proba=True)
-            preds.append(sub[self.target_col].values)
-
-        preds = np.stack(preds)
-        average_pred = preds.mean(axis=0)
-        sub[self.target_col] = average_pred
-        return sub
+        raise NotImplementedError
 
     def get_experiment_params(self):
         params = {"model": "ensemble"}
@@ -181,7 +173,7 @@ class CodeBlendingSubmitter(CodeSubmitter):
 
     def _train_and_evaluate(self):
         # Note: optunaの場合のobjectiveに対応するためAttributeにする
-        self.oof = self._merge_predition()
+        self.oof = self._merge_oof_predition()
         if self.weights is None:
             self._optimize_weights()
 
@@ -199,7 +191,7 @@ class CodeBlendingSubmitter(CodeSubmitter):
         temp = temp.drop(columns=pred_cols)
         return temp
 
-    def _merge_predition(self):
+    def _merge_oof_predition(self):
         oof = None
         for i, submitter in enumerate(self.submitters):
             temp = self._load_oof(submitter.model.oof_dir)
@@ -276,7 +268,7 @@ class CodeBlendingSubmitter(CodeSubmitter):
         print("Best weights:", best_weights, "Best score:", np.min(scores))
         return best_weights
 
-    def _get_params_grid(self, unit=0.01):
+    def _get_params_grid(self, unit=0.05):
         # 3つのパラメータのすべての組み合わせを作成
         grid = list(
             itertools.product(np.arange(0, 1.1, unit), repeat=len(self.submitters))
@@ -307,17 +299,27 @@ class CodeBlendingSubmitter(CodeSubmitter):
 
 
 class CodeStackingSubmitter(CodeBlendingSubmitter):
-    id_col = ""
-
-    def __init__(self, stack_submitter, submitters, submission_comment):
-        self.stack_submitter = stack_submitter
-        self.submitters = submitters
-        self.submission_comment = submission_comment
-        assert self.id_col
+    def __init__(
+        self,
+        layer_1_submitter,
+        layer_0_submitters,
+        merge_keys,
+        submission_comment,
+        experiment_params={},
+        add_agg_features=False,
+    ):
+        self.layer_1_submitter = layer_1_submitter
+        self.add_agg_features = add_agg_features
+        super().__init__(
+            submitters=layer_0_submitters,
+            merge_keys=merge_keys,
+            submission_comment=submission_comment,
+            experiment_params=experiment_params,
+        )
 
     def load_model(self):
         super().load_model()
-        self.stack_submitter.load_model()
+        self.layer_1_submitter.load_model()
 
     def estimate(self, test, sub):
         features = self._estimate_layer_0(test=test, sub=sub)
@@ -325,56 +327,49 @@ class CodeStackingSubmitter(CodeBlendingSubmitter):
         return sub
 
     def _estimate_layer_0(self, test, sub):
-        features = sub[[self.id_col]].copy()
-        for index, submitter in enumerate(self.submitters):
-            temp = submitter.estimate(test=test.copy(), sub=sub.copy(), proba=True)
+        features = sub[self.merge_keys].copy()
+        for index, submitter in enumerate(self.layer_0_submitters):
+            temp = submitter.estimate(test=test.copy(), sub=sub.copy())
             temp = temp.rename(columns={self.target_col: f"pred_{index}"})
             features = pd.merge(features, temp, how="left", on=self.id_col)
         return features
 
     def _estimate_layer_1(self, features, sub):
-        pred = self.stack_submitter.model.estimate(features, sub.copy(), proba=False)
-        sub = pd.merge(sub, pred, how="left", on=self.id_col)
+        pred = self.layer_1_submitter.model.estimate(features, sub.copy())
+        sub = pd.merge(sub, pred, how="left", on=self.merge_keys)
         return sub
 
+    def _train_and_evaluate(self):
+        features = self._get_oof_features()
+        fold_generator = self._cv_split(features)
+        res = self.layer_1_submitter.model.cv(fold_generator, save_model=True)
+        return res
+
+    def _get_oof_features(self):
+        df = self._merge_oof_predition()
+        if self.add_agg_features:
+            df = self._calc_agg_features(df)
+        return df
+
+    def _calc_agg_features(self, df):
+        pred_cols = [i for i in df.columns if self.pred_col in i]
+        df[f"{self.pred_col}_mean"] = df[pred_cols].mean(axis=1)
+        df[f"{self.pred_col}_std"] = df[pred_cols].std(axis=1)
+        df[f"{self.pred_col}_min"] = df[pred_cols].min(axis=1)
+        df[f"{self.pred_col}_max"] = df[pred_cols].max(axis=1)
+        df[f"{self.pred_col}_range"] = (
+            df[f"{self.pred_col}_max"] - df[f"{self.pred_col}_min"]
+        )
+        return df
+
     def get_experiment_params(self):
-        params = {"model_name": self.stack_submitter.model.__class__.__name__}
-        for index, submitter in enumerate(self.submitters):
+        params = {"model": self.layer_1_submitter.model.__class__.__name__}
+        for index, submitter in enumerate(self.layer_0_submitters):
             params[f"element_{index}"] = submitter.model.__class__.__name__
         return params
 
-    def _train_and_evaluate(self, retrain_all_data=False, dry_run=None):
-        features = self._generate_features()
-        fold_generate_func = self.stack_submitter.data_splitter.cv_split
-        res = self.stack_submitter.model.cv(
-            features=features,
-            fold_generate_func=fold_generate_func,
-            save_model=not retrain_all_data,
-        )
-        if retrain_all_data:
-            self.stack_submitter.model.fit(features=features, save_model=True)
-        return res
-
-    def _generate_features(self):
-        features = pd.DataFrame()
-        for index, submitter in enumerate(self.submitters):
-            pred_col = f"pred_{index}"
-            df = self._load_csv(submitter.model.csv_dir)
-            df = df.rename(columns={self.pred_col: pred_col})
-            if index == 0:
-                features = df.copy()
-            else:
-                df = df[[self.id_col, pred_col]]
-                features = pd.merge(features, df, how="inner", on=self.id_col)
-
-        # features = self._calc_agg_features(features)
-        return features
-
-    # def _calc_agg_features(self, df):
-    #     pred_cols = [i for i in df.columns if 'pred' in i]
-    #     # df['pred_mean'] = df[pred_cols].mean(axis=1)
-    #     df['pred_std'] = df[pred_cols].std(axis=1)
-    #     df['pred_min'] = df[pred_cols].min(axis=1)
-    #     df['pred_max'] = df[pred_cols].max(axis=1)
-    #     # df['pred_range'] = df['pred_max'] - df['pred_min']
-    #     return df
+    def _cv_split(self, features):
+        for i in features["cv_id"].unique():
+            train = features[features["cv_id"] != i]
+            valid = features[features["cv_id"] == i]
+            yield train, valid
