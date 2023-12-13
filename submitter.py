@@ -100,6 +100,7 @@ class CodeBlendingSubmitter(CodeSubmitter):
         optimize_direction="minimize",
         n_trials=100,
         search_grid=None,
+        grid_unit=0.05,
     ):
         """
         defaultはAveraging
@@ -125,6 +126,7 @@ class CodeBlendingSubmitter(CodeSubmitter):
         self.optimize_direction = optimize_direction
         self.n_trials = n_trials
         self.search_grid = search_grid
+        self.grid_unit = grid_unit
 
         # dummy
         self.model = self.submitters[0].model
@@ -155,7 +157,7 @@ class CodeBlendingSubmitter(CodeSubmitter):
 
     def load_model(self):
         for i in self.submitters:
-            i.model.load_model()
+            i.load_model()
 
     def estimate(self, test, sub):
         """
@@ -250,7 +252,7 @@ class CodeBlendingSubmitter(CodeSubmitter):
             raise ValueError("optimize_method must be grid or optuna.")
 
     def _get_objective(self, cv_result) -> float:
-        return round(np.mean(cv_result.cv_metrics), 4)
+        return np.mean(cv_result.cv_metrics)
 
     def _optimize_with_grid(self):
         weights_list = []
@@ -268,13 +270,15 @@ class CodeBlendingSubmitter(CodeSubmitter):
         print("Best weights:", best_weights, "Best score:", np.min(scores))
         return best_weights
 
-    def _get_params_grid(self, unit=0.05):
+    def _get_params_grid(self):
         # 3つのパラメータのすべての組み合わせを作成
         grid = list(
-            itertools.product(np.arange(0, 1.1, unit), repeat=len(self.submitters))
+            itertools.product(
+                np.arange(0, 1.1, self.grid_unit), repeat=len(self.submitters)
+            )
         )
         # 各組み合わせの合計が1になる組み合わせだけをフィルタリング
-        grid = [i for i in grid if np.isclose(sum(i), 1, atol=unit / 10)]
+        grid = [i for i in grid if np.isclose(sum(i), 1, atol=self.grid_unit / 10)]
         return grid
 
     def _optuna_objective(self, trial):
@@ -373,3 +377,7 @@ class CodeStackingSubmitter(CodeBlendingSubmitter):
             train = features[features["cv_id"] != i]
             valid = features[features["cv_id"] == i]
             yield train, valid
+
+    def set_last_fold_model(self):
+        super().set_last_fold_model()
+        self.layer_1_submitter.set_last_fold_model()
