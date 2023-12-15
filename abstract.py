@@ -38,11 +38,12 @@ except OSError as e:
 SEED = 42
 
 
-def watch_submit_time(comp_name):
+def watch_submit_time(comp_name, submit_number=0):
     api = KaggleApi()
     api.authenticate()
-    result_ = api.competition_submissions(comp_name)[0]
-    latest_ref = str(result_)  # 最新のサブミット番号
+    # 直近から数えたサブミット番号
+    result_ = api.competition_submissions(comp_name)[submit_number]
+    latest_ref = str(result_)
     submit_time = result_.date
     status = ""
 

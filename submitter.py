@@ -187,7 +187,7 @@ class CodeBlendingSubmitter(CodeSubmitter):
     def _blending(self, df, weights):
         temp = df.copy()
         temp["pred"] = 0.0
-        pred_cols = self._get_pred_cols()
+        pred_cols = self._get_pred_cols(temp)
         for w, c in zip(weights, pred_cols):
             temp["pred"] += w * temp[c]
         temp = temp.drop(columns=pred_cols)
@@ -208,8 +208,8 @@ class CodeBlendingSubmitter(CodeSubmitter):
                 assert len(oof) == len(temp)
         return oof
 
-    def _get_pred_cols(self):
-        return [f"{self.pred_col}_{i}" for i in range(len(self.submitters))]
+    def _get_pred_cols(self, df):
+        return [i for i in df.columns if f"{self.pred_col}_" in i]
 
     def _calc_metric(self, oof):
         metrics = []
