@@ -1,23 +1,28 @@
 {
-  "name": "kaggle-",
+  "name": "${containerEnv:PROJECT_NAME}",
   "image": "gcr.io/kaggle-gpu-images/python:latest",
+  // for CPU only
+  // "image": "gcr.io/kaggle-images/python:latest",
+  // for debug
+  // "image": "mcr.microsoft.com/devcontainers/python:3.11-bullseye"
   "containerEnv": {
     "TZ": "Asia/Tokyo"
   },
-  "runArgs": ["--init", "--gpus", "all", "--shm-size", "6gb"],
-  "postCreateCommand": "./.devcontainer/postCreateCommand.sh",
-  "workspaceFolder": "/kaggle/input",
-  "workspaceMount": "source=${localWorkspaceFolder},target=/kaggle/input,type=bind,consistency=cached",
+  "runArgs": ["--init", "--gpus", "all", "--shm-size", "6gb", "--env-file", ".env"],
+  // for CPU only
+  // "runArgs": ["--init", "--env-file", ".env"],
+  "postCreateCommand": "/kaggle/input/${containerEnv:KAGGLE_DATASET_NAME}/.devcontainer/postCreateCommand.sh",
+  "workspaceFolder": "/kaggle",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/kaggle/input/${containerEnv:KAGGLE_DATASET_NAME},type=bind,consistency=cached",
   "mounts": [
     "source=${localEnv:USERPROFILE}/.kaggle,target=/root/.kaggle,type=bind,consistency=cached",
-    "source=${localEnv:USERPROFILE}/Desktop/dev/mymodules,target=/kaggle/input/mymodules,type=bind,consistency=cached",
     "source=venv-${devcontainerId},target=${containerWorkspaceFolder}/.venv,type=volume"
   ],
   "customizations": {
     "vscode": {
       "settings": {
         "editor.renderWhitespace": "all",
-        //   "python.defaultInterpreterPath": ".venv/bin/python",
+        "python.defaultInterpreterPath": "opt/conda/bin/python",
         "python.formatting.provider": "black",
         "[python]": {
           "editor.formatOnSave": true,

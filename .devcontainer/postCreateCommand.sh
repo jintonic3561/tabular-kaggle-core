@@ -10,4 +10,8 @@ mkdir /kaggle/working
 pip install pretty_errors
 pip install mlflow
 
+cd /kaggle/input/source
+git clone https://github.com/jintonic3561/mlutil.git
+cd /kaggle/input
+
 echo "FINISH Install"

@@ -19,16 +19,10 @@ import pandas as pd
 import torch
 from sklearn.model_selection import KFold
 
-try:
-    from mlutil.features import ABSFeatureGenerator
-    from mlutil.mlbase import MLBase
-    from mlutil.util import mlflow
-    from mlutil.util.notifier import SlackChannel, slack_notify
-except ImportError:
-    from mymodules.mlutil.features import ABSFeatureGenerator
-    from mymodules.mlutil.mlbase import MLBase
-    from mymodules.mlutil.util import mlflow
-    from mymodules.mlutil.util.notifier import SlackChannel, slack_notify
+from source.mlutil.features import ABSFeatureGenerator
+from source.mlutil.mlbase import MLBase
+from source.mlutil.util import mlflow
+from source.mlutil.util.notifier import slack_notify
 
 try:
     from kaggle.api.kaggle_api_extended import KaggleApi
@@ -420,19 +414,24 @@ class ABSSubmitter:
         score = float(score) if score else np.nan
         return score
 
-    def _save_experiment(self, res: dict, sub: pd.DataFrame, params: dict):
+    def _save_experiment(self, res: dict, sub: pd.DataFrame, params: dict, slack_channel_name: str = None):
         public_score = self._get_public_score()
         metrics = self.get_metrics(res)
         metrics["public_score"] = public_score
+        uri = os.path.join(self.artifact_dir, "mlflow/mlruns")
         mlflow.run(
             experiment_name=self.experiment_name,
             run_name=self.submission_comment,
             params=params,
             metrics=metrics,
             artifact_paths=[self.model.model_dir],
+            uri=uri,
         )
-        message = f"experiment finished. metrics:\n{json.dumps(metrics)}"
-        slack_notify(message, channel=SlackChannel.regular)
+
+        if slack_channel_name:
+            message = f"experiment finished. metrics:\n{json.dumps(metrics)}"
+            slack_notify(message, channel_name=slack_channel_name)
+        
         sub.to_csv(
             os.path.join(
                 self.artifact_dir,
@@ -448,14 +447,14 @@ class ABSSubmitter:
 
 class CodeSubmitter(ABSSubmitter):
     def estimate(
-        self, test: pd.DataFrame, sub: pd.DataFrame, proba: bool
+        self, test: pd.DataFrame, sub: pd.DataFrame, proba: bool=False, ignore_exception: bool=False
     ) -> pd.DataFrame:
         """
         feature_generatorを呼ぶ際にはsave_features=Falseにする
         """
         raise NotImplementedError()
 
-    def get_mock_api(self):
+    def get_mock_api(self, dry_run: bool):
         """
         from public_timeseries_testing_util
         return MockAPI
@@ -481,7 +480,7 @@ class CodeSubmitter(ABSSubmitter):
     def load_model(self):
         self.model.load_model()
 
-    def _save_experiment(self, res, params):
+    def _save_experiment(self, res, params, slack_channel_name=None):
         # Note: コードコンペのためsubmitおよびPublic scoreの記録は手動
         metrics = self.get_metrics(res)
         metrics["public_score"] = 0.0
@@ -492,8 +491,9 @@ class CodeSubmitter(ABSSubmitter):
             metrics=metrics,
             artifact_paths=[self.model.model_dir, self.model.oof_dir],
         )
-        message = f"experiment finished. metrics:\n{json.dumps(metrics)}"
-        slack_notify(message, SlackChannel.regular)
+        if slack_channel_name:
+            message = f"experiment finished. metrics:\n{json.dumps(metrics)}"
+            slack_notify(message, channel_name=slack_channel_name)
 
     def set_last_fold_model(self):
         self.model.model = [self.model.model[-1]]
