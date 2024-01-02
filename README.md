@@ -11,6 +11,7 @@ python .setting.py --project_name my_project --ds_name my_dataset_name --device 
 Here is a summary of the command-line arguments for the .setting.py script:
 
 | Argument | Description |
+| --- | -------------------------- |
 |--project_name | Specify the project name. |
 |--ds_name | Specify the dataset title used for kaggle dataset. | 
 |--device | Specify the device type. The expected values are "gpu" or "cpu". |
