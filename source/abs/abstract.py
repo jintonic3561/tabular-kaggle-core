@@ -19,6 +19,7 @@ import pandas as pd
 import torch
 from sklearn.model_selection import KFold
 
+from source.abs import mockapi
 from source.mlutil.features import ABSFeatureGenerator
 from source.mlutil.mlbase import MLBase
 from source.mlutil.util import mlflow
@@ -454,12 +455,8 @@ class CodeSubmitter(ABSSubmitter):
         """
         raise NotImplementedError()
 
-    def get_mock_api(self, dry_run: bool):
-        """
-        from public_timeseries_testing_util
-        return MockAPI
-        """
-        raise NotImplementedError()
+    def get_mock_api(self, dry_run=False):
+        return mockapi.make_env(dry_run=dry_run)
 
     def experiment(
         self,
