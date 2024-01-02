@@ -6,6 +6,10 @@ from source.mlutil import tuner as Tuner
 
 
 def run(ex_num, dry_run=False, local=True, cloud=False):
+    '''
+    This function is implemented for Code Competition.
+    For CSV Competition, You should split submitter.submit function into experiment and inference(submit).
+    '''
     submitter = _get_submitter(ex_num, dry_run=dry_run, local=local, cloud=cloud)
     submitter.experiment(dry_run=dry_run)
 

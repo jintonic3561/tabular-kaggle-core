@@ -9,6 +9,10 @@ from source.abs.config import set_config
 def run(
     ex_num, local=False, dry_run=False, ignore_exception=False
 ):
+    '''
+    This function is implemented for Code Competition.
+    For CSV Competition, You should split submitter.submit function into experiment and inference(submit).
+    '''
     start_time = time.time()
     set_config(local=local)
     submitter, _ = _get_submitter(ex_num)
