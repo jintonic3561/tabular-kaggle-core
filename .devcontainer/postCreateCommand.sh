@@ -7,11 +7,11 @@ sudo chown -R vscode:vscode .
 
 mkdir /kaggle/working
 
-pip install pretty_errors
-pip install mlflow
+# pip install pretty_errors
+# pip install mlflow
 
-cd /kaggle/input/source
+cd /kaggle/input/${KAGGLE_DATASET_NAME}/source
 git clone https://github.com/jintonic3561/mlutil.git
-cd /kaggle/input
+cd /kaggle/
 
 echo "FINISH Install"

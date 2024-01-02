@@ -1,59 +1,62 @@
 {
-  "name": "${containerEnv:PROJECT_NAME}",
-  "image": "gcr.io/kaggle-gpu-images/python:latest",
-  // for CPU only
-  // "image": "gcr.io/kaggle-images/python:latest",
-  // for debug
-  // "image": "mcr.microsoft.com/devcontainers/python:3.11-bullseye"
-  "containerEnv": {
-    "TZ": "Asia/Tokyo"
-  },
-  "runArgs": ["--init", "--gpus", "all", "--shm-size", "6gb", "--env-file", ".env"],
-  // for CPU only
-  // "runArgs": ["--init", "--env-file", ".env"],
-  "postCreateCommand": "/kaggle/input/${containerEnv:KAGGLE_DATASET_NAME}/.devcontainer/postCreateCommand.sh",
-  "workspaceFolder": "/kaggle",
-  "workspaceMount": "source=${localWorkspaceFolder},target=/kaggle/input/${containerEnv:KAGGLE_DATASET_NAME},type=bind,consistency=cached",
-  "mounts": [
-    "source=${localEnv:USERPROFILE}/.kaggle,target=/root/.kaggle,type=bind,consistency=cached",
-    "source=venv-${devcontainerId},target=${containerWorkspaceFolder}/.venv,type=volume"
-  ],
-  "customizations": {
-    "vscode": {
-      "settings": {
-        "editor.renderWhitespace": "all",
-        "python.defaultInterpreterPath": "opt/conda/bin/python",
-        "python.formatting.provider": "black",
-        "[python]": {
-          "editor.formatOnSave": true,
-          "editor.codeActionsOnSave": {
-            "source.fixAll": true,
-            "source.organizeImports": true
-          }
-        },
-        "python.testing.pytestArgs": ["tests", "--capture=tee-sys", "-vv"],
-        "python.testing.pytestEnabled": true,
-        "coverage-gutters.showLineCoverage": true,
-        "coverage-gutters.showRulerCoverage": true,
-        "coverage-gutters.coverageFileNames": [".pytest_cache/coverage.xml"],
-        "[json][jsonc]": {
-          "editor.defaultFormatter": "esbenp.prettier-vscode",
-          "editor.formatOnSave": true,
-          "editor.codeActionsOnSave": {
-            "source.fixAll": true
-          }
+    "postCreateCommand": "/kaggle/input/${containerEnv:KAGGLE_DATASET_NAME}/.devcontainer/postCreateCommand.sh",
+    "workspaceFolder": "/kaggle",
+    "mounts": [
+        "source=${localEnv:USERPROFILE}/.kaggle,target=/root/.kaggle,type=bind,consistency=cached",
+        "source=venv-${devcontainerId},target=${containerWorkspaceFolder}/.venv,type=volume"
+    ],
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "editor.renderWhitespace": "all",
+                "python.defaultInterpreterPath": "opt/conda/bin/python",
+                "python.formatting.provider": "black",
+                "[python]": {
+                    "editor.formatOnSave": true,
+                    "editor.codeActionsOnSave": {
+                        "source.fixAll": true,
+                        "source.organizeImports": true
+                    }
+                },
+                "python.testing.pytestArgs": [
+                    "tests",
+                    "--capture=tee-sys",
+                    "-vv"
+                ],
+                "python.testing.pytestEnabled": true,
+                "coverage-gutters.showLineCoverage": true,
+                "coverage-gutters.showRulerCoverage": true,
+                "coverage-gutters.coverageFileNames": [
+                    ".pytest_cache/coverage.xml"
+                ],
+                "[json][jsonc]": {
+                    "editor.defaultFormatter": "esbenp.prettier-vscode",
+                    "editor.formatOnSave": true,
+                    "editor.codeActionsOnSave": {
+                        "source.fixAll": true
+                    }
+                }
+            },
+            "extensions": [
+                "esbenp.prettier-vscode",
+                "ms-python.python",
+                "ms-toolsai.jupyter",
+                "github.copilot",
+                "njpwerner.autodocstring",
+                "KevinRose.vsc-python-indent",
+                "charliermarsh.ruff",
+                "ryanluker.vscode-coverage-gutters"
+            ]
         }
-      },
-      "extensions": [
-        "esbenp.prettier-vscode",
-        "ms-python.python",
-        "ms-toolsai.jupyter",
-        "github.copilot",
-        "njpwerner.autodocstring",
-        "KevinRose.vsc-python-indent",
-        "charliermarsh.ruff",
-        "ryanluker.vscode-coverage-gutters"
-      ]
+    },
+    "name": "kaggle",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/kaggle/input/dataset,type=bind,consistency=cached",
+    "runArgs": [
+        "--init"
+    ],
+    "image": "mcr.microsoft.com/devcontainers/python:3.11-bullseye",
+    "containerEnv": {
+        "TZ": "Asia/Tokyo",
+        "KAGGLE_DATASET_NAME": "dataset"
     }
-  }
 }
