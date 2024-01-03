@@ -6,7 +6,7 @@ Created on Sat Jul  8 16:18:50 2023
 """
 
 from sklearn.preprocessing import QuantileTransformer
-from abstract import ABSDataPostprocessor
+from source.abs.abstract import ABSDataPostprocessor
 SEED = 42
 
 

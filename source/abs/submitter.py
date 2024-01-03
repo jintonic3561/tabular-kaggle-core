@@ -14,11 +14,7 @@ import numpy as np
 import optuna
 import pandas as pd
 from tqdm import tqdm
-
-try:
-    from abstract import ABSSubmitter, CodeSubmitter
-except ModuleNotFoundError:
-    from .abstract import ABSSubmitter, CodeSubmitter
+from source.abs.abstract import ABSSubmitter, CodeSubmitter
 
 
 class AveragingSubmitter(ABSSubmitter):
