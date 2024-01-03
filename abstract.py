@@ -42,6 +42,7 @@ def watch_submit_time(comp_name, submit_number=0):
     api = KaggleApi()
     api.authenticate()
     # 直近から数えたサブミット番号
+    print(f"submit number: {submit_number}")
     result_ = api.competition_submissions(comp_name)[submit_number]
     latest_ref = str(result_)
     submit_time = result_.date
