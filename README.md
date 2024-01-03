@@ -5,14 +5,14 @@ This repository provides a pipeline that can be used generically for Kaggle comp
 To get started, execute .setting.py to set up the devcontainer.json.
 
 ```
-python .setting.py --project_name my_project --ds_name my_dataset_name --device gpu 
+python .setting.py --competition_id join_competition_id --ds_name your_dataset_name --device gpu 
 ```
 
 Here is a summary of the command-line arguments for the .setting.py script:
 
 | Argument | Description |
-| --- | -------------------------- |
-|--project_name | Specify the project name. |
+| ------ | -------------------------- |
+|--competition_id | Specify the project name. |
 |--ds_name | Specify the dataset title used for kaggle dataset. | 
 |--device | Specify the device type. The expected values are "gpu" or "cpu". |
 |--debug | If True, use a lightweight Python image as the docker image instead of a kaggle image. |

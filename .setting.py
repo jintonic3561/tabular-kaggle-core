@@ -8,7 +8,7 @@ def main():
 
 def _load_args():
     parser = argparse.ArgumentParser(description="Confiure your container settings")
-    parser.add_argument("--project_name", default="kaggle", help="your project name")
+    parser.add_argument("--competition_id", default="kaggle", help="your project name")
     parser.add_argument("--ds_name", default="dataset", help="Title of dataset to be uploaded to kaggle")
     parser.add_argument("--device", default="gpu", help="gpu or cpu")
     parser.add_argument("--debug", default=False, help="true or false")
@@ -19,7 +19,7 @@ def _update_json(args):
     with open('.devcontainer/devcontainer.json', 'r') as f:
         dic = json.load(f)
     
-    dic["name"] = args.project_name
+    dic["name"] = args.competition_id
     
     mount_path = "source=${localWorkspaceFolder},target=/kaggle/input/" + args.ds_name + ",type=bind,consistency=cached"
     dic["workspaceMount"] = mount_path
@@ -40,6 +40,7 @@ def _update_json(args):
     dic["containerEnv"] = {
         "TZ": "Asia/Tokyo",
         "KAGGLE_DATASET_NAME": args.ds_name,
+        "KAGGLE_COMPETITION_ID": args.competition_id,
     }
 
     with open('.devcontainer/devcontainer.json', 'w') as f:

@@ -159,9 +159,6 @@ class ABSDataSplitter:
 
 
 class ABSSubmitter:
-    competition_name = ""
-    experiment_name = ""
-    artifact_dir = "/kaggle/input/artifact/"
     dataset_ignore = [
         "__pycache__",
         ".ipynb_checkpoints",
@@ -175,9 +172,11 @@ class ABSSubmitter:
         "artifact/temp",
         "artifact/dataset",
         "mlflow",
-        "note",
+        "source/note",
         ".gitignore",
         ".git",
+        ".setting.py"
+        "README.md",
     ]
 
     def __init__(
@@ -205,12 +204,6 @@ class ABSSubmitter:
         experiment_params: dict
             The parameters for experiment. e.g. {"n_iter": "1000"}
         """
-
-        if not self.competition_name:
-            raise ValueError("competition_name must be specified.")
-        if not self.experiment_name:
-            raise ValueError("experiment_name must be specified.")
-
         self.data_fetcher = data_fetcher
         self.data_preprocessor = data_preprocessor
         self.feature_generator = feature_generator
@@ -219,7 +212,11 @@ class ABSSubmitter:
         self.model = model
         self.submission_comment = submission_comment
         self.experiment_params = experiment_params
+        
         self.api = self._init_kaggle_api()
+        self.competition_id = os.environ["KAGGLE_COMPETITION_ID"]
+        self.experiment_name = self.competition_id.split("-")[0]
+        self.artifact_dir = os.path.join(os.environ["DATASET_ROOT_DIR"], "artifact")
 
     def get_submit_data(self, test: pd.DataFrame) -> pd.DataFrame:
         sub = self.model.estimate(test)
@@ -362,7 +359,7 @@ class ABSSubmitter:
         self.api.competition_submit(
             file_name=file_name,
             message=self.submission_comment,
-            competition=self.competition_name,
+            competition=self.competition_id,
         )
 
     def _zip_dir(self, root_dir, output_path, ignore=[]):
@@ -408,7 +405,7 @@ class ABSSubmitter:
         return res
 
     def _get_public_score(self) -> float:
-        sub = self.api.competitions_submissions_list(self.competition_name)
+        sub = self.api.competitions_submissions_list(self.competition_id)
         sub = pd.DataFrame(sub)
         sub["date"] = pd.to_datetime(sub["date"])
         score = sub.sort_values("date", ascending=False)["publicScoreNullable"].iloc[0]
