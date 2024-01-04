@@ -20,6 +20,8 @@ Here is a summary of the command-line arguments for the .setting.py script:
 Note that this setup should be performed in your local Python environment.
 Once the setup is complete, you can use the DevContainer feature of VSCode to build the container environment as usual.
 
+### Waring
+Note that git can automatically change the newline code. In particular, `.devcontainer/postCreateCommand.sh` will not work properly unless the newline code is LF.
 
 # Clone as Your Private Repository
 0. Create an empty private Git repository
