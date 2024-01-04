@@ -484,6 +484,7 @@ class CodeSubmitter(ABSSubmitter):
             params=params,
             metrics=metrics,
             artifact_paths=[self.model.model_dir, self.model.oof_dir],
+            uri=os.path.join(self.artifact_dir, "mlflow/mlruns"),
         )
         message = f"experiment finished. metrics:\n{json.dumps(metrics)}"
         slack_notify(message, channel_name=slack_channel_name)

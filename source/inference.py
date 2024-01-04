@@ -41,7 +41,7 @@ def run(
 
 
 def _get_submitter(ex_num):
-    ex = importlib.import_module(f"experiment_setting.ex_{ex_num}")
+    ex = importlib.import_module(f"source.experiment_setting.ex_{ex_num}")
     submitter = ex.get_submitter()
     submitter.seed_everything()
     submitter.load_model()
