@@ -1,1 +1,1 @@
-__all__ = ["abs", "experiment_settings", "worker", "experiment", "inference", "local_lib"]
+__all__ = ["abs", "experiment_setting", "worker", "experiment", "inference", "local_lib"]

@@ -413,7 +413,7 @@ class ABSSubmitter:
         score = float(score) if score else np.nan
         return score
 
-    def _save_experiment(self, res: dict, sub: pd.DataFrame, params: dict, slack_channel_name: str = None):
+    def _save_experiment(self, res: dict, sub: pd.DataFrame, params: dict, slack_channel_name: str="general"):
         public_score = self._get_public_score()
         metrics = self.get_metrics(res)
         metrics["public_score"] = public_score
@@ -427,9 +427,8 @@ class ABSSubmitter:
             uri=uri,
         )
 
-        if slack_channel_name:
-            message = f"experiment finished. metrics:\n{json.dumps(metrics)}"
-            slack_notify(message, channel_name=slack_channel_name)
+        message = f"experiment finished. metrics:\n{json.dumps(metrics)}"
+        slack_notify(message, channel_name=slack_channel_name)
         
         sub.to_csv(
             os.path.join(
@@ -475,7 +474,7 @@ class CodeSubmitter(ABSSubmitter):
     def load_model(self):
         self.model.load_model()
 
-    def _save_experiment(self, res, params, slack_channel_name=None):
+    def _save_experiment(self, res, params, slack_channel_name="general"):
         # Note: コードコンペのためsubmitおよびPublic scoreの記録は手動
         metrics = self.get_metrics(res)
         metrics["public_score"] = 0.0
@@ -486,9 +485,8 @@ class CodeSubmitter(ABSSubmitter):
             metrics=metrics,
             artifact_paths=[self.model.model_dir, self.model.oof_dir],
         )
-        if slack_channel_name:
-            message = f"experiment finished. metrics:\n{json.dumps(metrics)}"
-            slack_notify(message, channel_name=slack_channel_name)
+        message = f"experiment finished. metrics:\n{json.dumps(metrics)}"
+        slack_notify(message, channel_name=slack_channel_name)
 
     def set_last_fold_model(self):
         self.model.model = [self.model.model[-1]]
