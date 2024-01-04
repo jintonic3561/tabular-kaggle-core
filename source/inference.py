@@ -94,21 +94,3 @@ def _upload_dataset(ex_num):
     submitter, _ = _get_submitter(ex_num)
     res = submitter.upload_dataset(dataset_title=dataset_title, dataset_directory=dataset_directory)
     print(res)
-
-
-if __name__ == "__main__":
-    ex_num = 0
-    dry_run = True
-    ignore_exception = False
-    id_columns = ["not_implement_error"]
-    set_config(local=True)
-    
-    run(
-        ex_num,
-        local=True,
-        dry_run=dry_run,
-        ignore_exception=ignore_exception,
-    )
-    _validate_prediction(ex_num, id_columns=id_columns)
-
-    # _upload_dataset(ex_num)

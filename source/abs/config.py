@@ -1,4 +1,5 @@
 import os
+import sys
 
 def set_config(local=False, experiment=False, cloud=False):
     if experiment and cloud:
@@ -6,6 +7,8 @@ def set_config(local=False, experiment=False, cloud=False):
         dataset_root_dir = os.path.join("/home/jupyter/imported/input/", os.environ["KAGGLE_DATASET_NAME"])
     else:
         dataset_root_dir = os.path.join("/kaggle/input/", os.environ["KAGGLE_DATASET_NAME"])
+    
+    sys.path.append(os.path.join(dataset_root_dir, "source/local_lib"))
     
     if not local and experiment and not cloud:
         os.environ["DATASET_ROOT_DIR"] = "/kaggle/working/"
