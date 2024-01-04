@@ -1,5 +1,5 @@
 {
-    "postCreateCommand": "/kaggle/input/${containerEnv:KAGGLE_DATASET_NAME}/.devcontainer/postCreateCommand.sh",
+    "postCreateCommand": "dash /kaggle/input/${containerEnv:KAGGLE_DATASET_NAME}/.devcontainer/postCreateCommand.sh",
     "workspaceFolder": "/kaggle",
     "mounts": [
         "source=${localEnv:USERPROFILE}/.kaggle,target=/root/.kaggle,type=bind,consistency=cached",
