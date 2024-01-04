@@ -19,12 +19,12 @@ def run(
 
     if local:
         env = submitter.get_mock_api(dry_run=dry_run)
-        iter_test = env.iter_test()
         # Note: Validate inferences using only the last fold's model
         submitter.set_last_fold_model()
     else:
-        iter_test = _get_iter_test_object()
-
+        env = _get_test_env()
+    
+    iter_test = env.iter_test()
     iter_times = []
     for index, args in enumerate(iter_test):
         iter_start = time.time()
@@ -48,7 +48,7 @@ def _get_submitter(ex_num):
     return submitter, ex.config
 
 
-def _get_iter_test_object():
+def _get_test_env():
     raise NotImplementedError("Implement a function that returns an iter_test object in the submit environment.")
 
 
