@@ -30,7 +30,7 @@ def _get_submitter(ex_num, dry_run=False, local=True, cloud=False):
     if dry_run:
         os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
     set_config(local=local, experiment=True, cloud=cloud)
-    ex = importlib.import_module(f"source.experiment_settings.ex_{ex_num}")
+    ex = importlib.import_module(f"source.experiment_setting.ex_{ex_num}")
     submitter = ex.get_submitter()
     submitter.seed_everything()
     return submitter

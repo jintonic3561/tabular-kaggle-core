@@ -12,7 +12,7 @@ pip install pretty_errors
 pip install mlflow
 
 # Install machine learning utility
-git clone https://github.com/jintonic3561/mlutil.git /kaggle/input/$KAGGLE_DATASET_NAME/source/local_lib/mlutil
+git clone https://github.com/jintonic3561/mlutil.git /kaggle/input/$KAGGLE_DATASET_NAME/source/mlutil
 
 # Download the competition dataset
 chmod 600 /root/.kaggle/kaggle.json
