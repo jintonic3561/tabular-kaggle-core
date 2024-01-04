@@ -26,7 +26,7 @@ def run(
         iter_test = _get_iter_test_object()
 
     iter_times = []
-    for index, *args in enumerate(iter_test):
+    for index, args in enumerate(iter_test):
         iter_start = time.time()
         sub = submitter.estimate(*args, ignore_exception=ignore_exception)
         env.predict(sub)
@@ -67,7 +67,7 @@ def _validate_prediction(ex_num, id_columns, error_threshold=1e-6, oof_dir=None,
     )
     fold_id = oof["cv_id"].max() if fold_id == -1 else fold_id
     target_col = submitter.model.target_col
-    oof[oof["cv_id"] == fold_id][id_columns + ["pred", target_col]]
+    oof = oof[oof["cv_id"] == fold_id][id_columns + ["pred", target_col]]
     oof = oof.rename(columns={"pred": "oof_pred"})
     sub = sub.rename(columns={target_col: "sub_pred"})
     df = pd.merge(oof, sub, on=id_columns, how="left")

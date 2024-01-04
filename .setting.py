@@ -43,8 +43,11 @@ def _update_json(args):
         "KAGGLE_COMPETITION_ID": args.competition_id,
     }
 
-    with open('.devcontainer/devcontainer.json', 'w') as f:
+    with open(".devcontainer/devcontainer.json", "w") as f:
         json.dump(dic, f, indent=4)
+    
+    with open("source/env.py", "w") as f:
+        f.write(f"dict = {dic['containerEnv']}")
 
 
 if __name__ == '__main__':

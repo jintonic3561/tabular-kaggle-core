@@ -49,14 +49,19 @@
             ]
         }
     },
-    "name": "kaggle",
-    "workspaceMount": "source=${localWorkspaceFolder},target=/kaggle/input/dataset,type=bind,consistency=cached",
+    "name": "optiver-trading-at-the-close",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/kaggle/input/optiver-ds-test,type=bind,consistency=cached",
     "runArgs": [
-        "--init"
+        "--init",
+        "--gpus",
+        "all",
+        "--shm-size",
+        "6gb"
     ],
-    "image": "mcr.microsoft.com/devcontainers/python:3.11-bullseye",
+    "image": "gcr.io/kaggle-gpu-images/python:latest",
     "containerEnv": {
         "TZ": "Asia/Tokyo",
-        "KAGGLE_DATASET_NAME": "dataset"
+        "KAGGLE_DATASET_NAME": "optiver-ds-test",
+        "KAGGLE_COMPETITION_ID": "optiver-trading-at-the-close"
     }
 }

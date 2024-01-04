@@ -5,7 +5,9 @@ Mirrors the production timeseries API in the crucial respects, but won't be as f
 ONLY works afer the first three variables in MockAPI.__init__ are populated.
 '''
 
+import os
 from typing import Sequence, Tuple
+
 
 import pandas as pd
 
@@ -65,8 +67,11 @@ class MockApi:
             while self._status != 'prediction_received':
                 print('You must call `predict()` successfully before you can continue with `iter_test()`', flush=True)
                 yield None
-
-        with open('submission.csv', 'w') as f_open:
+        
+        path = os.path.join(os.environ["DATASET_ROOT_DIR"], "artifact/temp/submission.csv")
+        if not os.path.exists(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path))
+        with open(path, "w") as f_open:
             pd.concat(self.predictions).to_csv(f_open, index=False)
         self._status = 'finished'
 
