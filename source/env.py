@@ -1,1 +1,1 @@
-dict = {'TZ': 'Asia/Tokyo', 'KAGGLE_DATASET_NAME': 'optiver-ds-test', 'KAGGLE_COMPETITION_ID': 'optiver-trading-at-the-close'}
+dict = {'TZ': 'Asia/Tokyo', 'KAGGLE_DATASET_NAME': 'your-dataset-name', 'KAGGLE_COMPETITION_ID': 'join-competition-id'}
