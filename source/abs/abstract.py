@@ -30,7 +30,7 @@ try:
 except OSError as e:
     print(e)
 
-SEED = 42
+SEED = 527
 
 
 def watch_submit_time(comp_name, submit_number=0):

@@ -1,5 +1,10 @@
 import os
+import warnings
+
+from pandas.errors import PerformanceWarning
+
 from source import env
+
 
 def set_config(local=False, experiment=False, cloud=False):
     if not local:
@@ -29,4 +34,7 @@ def set_config(local=False, experiment=False, cloud=False):
         import numpy as np
 
         np.seterr(divide="ignore", invalid="ignore")
+    
+    warnings.filterwarnings("ignore", category=PerformanceWarning)
+    
 
